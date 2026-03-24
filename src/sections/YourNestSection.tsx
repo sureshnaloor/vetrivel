@@ -1,0 +1,225 @@
+import { useLayoutEffect, useRef } from 'react';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { Home } from 'lucide-react';
+
+gsap.registerPlugin(ScrollTrigger);
+
+interface YourNestSectionProps {
+  className?: string;
+}
+
+const YourNestSection = ({ className = '' }: YourNestSectionProps) => {
+  const sectionRef = useRef<HTMLElement>(null);
+  const collageRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const photoARef = useRef<HTMLDivElement>(null);
+  const photoBRef = useRef<HTMLDivElement>(null);
+  const photoCRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    const collage = collageRef.current;
+    const text = textRef.current;
+    const photoA = photoARef.current;
+    const photoB = photoBRef.current;
+    const photoC = photoCRef.current;
+
+    if (!section || !collage || !text || !photoA || !photoB || !photoC) return;
+
+    const ctx = gsap.context(() => {
+      const scrollTl = gsap.timeline({
+        scrollTrigger: {
+          trigger: section,
+          start: 'top top',
+          end: '+=130%',
+          pin: true,
+          scrub: 0.6,
+        },
+      });
+
+      // ENTRANCE (0% - 30%)
+      scrollTl.fromTo(
+        collage,
+        { y: '100vh', opacity: 0 },
+        { y: 0, opacity: 1, ease: 'none' },
+        0
+      );
+
+      scrollTl.fromTo(
+        photoA,
+        { x: '-40vw', opacity: 0 },
+        { x: 0, opacity: 1, ease: 'none' },
+        0.05
+      );
+
+      scrollTl.fromTo(
+        photoB,
+        { y: '60vh', opacity: 0 },
+        { y: 0, opacity: 1, ease: 'none' },
+        0.08
+      );
+
+      scrollTl.fromTo(
+        photoC,
+        { x: '40vw', opacity: 0 },
+        { x: 0, opacity: 1, ease: 'none' },
+        0.1
+      );
+
+      scrollTl.fromTo(
+        text,
+        { x: '50vw', opacity: 0 },
+        { x: 0, opacity: 1, ease: 'none' },
+        0
+      );
+
+      // SETTLE (30% - 70%) - hold
+
+      // EXIT (70% - 100%)
+      scrollTl.fromTo(
+        collage,
+        { y: 0, opacity: 1 },
+        { y: '-40vh', opacity: 0, ease: 'power2.in' },
+        0.7
+      );
+
+      scrollTl.fromTo(
+        photoA,
+        { x: 0, opacity: 1 },
+        { x: '-20vw', opacity: 0, ease: 'power2.in' },
+        0.7
+      );
+
+      scrollTl.fromTo(
+        photoB,
+        { y: 0, opacity: 1 },
+        { y: '30vh', opacity: 0, ease: 'power2.in' },
+        0.7
+      );
+
+      scrollTl.fromTo(
+        photoC,
+        { x: 0, opacity: 1 },
+        { x: '20vw', opacity: 0, ease: 'power2.in' },
+        0.7
+      );
+
+      scrollTl.fromTo(
+        text,
+        { x: 0, opacity: 1 },
+        { x: '10vw', opacity: 0, ease: 'power2.in' },
+        0.7
+      );
+    }, section);
+
+    return () => ctx.revert();
+  }, []);
+
+  return (
+    <section
+      ref={sectionRef}
+      className={`section-pinned ${className}`}
+      style={{ backgroundColor: 'var(--page-bg)' }}
+    >
+      {/* Left Collage */}
+      <div
+        ref={collageRef}
+        className="absolute"
+        style={{
+          left: '6vw',
+          top: '12vh',
+          width: 'clamp(320px, 46vw, 560px)',
+          height: '76vh',
+        }}
+      >
+        {/* Base Map Card */}
+        <div className="absolute inset-0 map-card">
+          <img
+            src="/map-base.jpg"
+            alt="Map"
+            className="w-full h-full object-cover"
+          />
+          {/* Nest indicator */}
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full bg-[#D13B3B]/10 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-[#D13B3B] flex items-center justify-center">
+                  <Home className="w-5 h-5 text-white" />
+                </div>
+              </div>
+              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-3 h-1.5 bg-black/20 rounded-full blur-sm" />
+            </div>
+          </div>
+        </div>
+
+        {/* Photo A - Top Left */}
+        <div
+          ref={photoARef}
+          className="absolute photo-card"
+          style={{
+            left: '-3vw',
+            top: '4vh',
+            width: 'clamp(140px, 18vw, 220px)',
+            height: '160px',
+          }}
+        >
+          <img src="/temple-03.jpg" alt="Temple stairs" />
+        </div>
+
+        {/* Photo B - Bottom Left */}
+        <div
+          ref={photoBRef}
+          className="absolute photo-card"
+          style={{
+            left: '-2vw',
+            top: '44vh',
+            width: 'clamp(140px, 18vw, 220px)',
+            height: '160px',
+          }}
+        >
+          <img src="/temple-02.jpg" alt="Temple lanterns" />
+        </div>
+
+        {/* Photo C - Bottom Right */}
+        <div
+          ref={photoCRef}
+          className="absolute photo-card"
+          style={{
+            left: '28vw',
+            top: '50vh',
+            width: 'clamp(140px, 18vw, 220px)',
+            height: '160px',
+          }}
+        >
+          <img src="/temple-05.jpg" alt="Temple festival" />
+        </div>
+      </div>
+
+      {/* Right Text Block */}
+      <div
+        ref={textRef}
+        className="absolute"
+        style={{
+          left: 'clamp(380px, 56vw, 60vw)',
+          top: '26vh',
+          width: 'clamp(280px, 36vw, 440px)',
+        }}
+      >
+        <h2 className="heading-section text-[color:var(--page-fg)] mb-6">
+          YOUR SPACE ON THE MAP.
+        </h2>
+        <p className="body-text mb-8">
+          Create a nest to host pooja bookings, share your story, and welcome
+          visitors with clear, calm information.
+        </p>
+        <button className="btn-primary">
+          <Home className="w-4 h-4 mr-2" />
+          Create a nest
+        </button>
+      </div>
+    </section>
+  );
+};
+
+export default YourNestSection;
