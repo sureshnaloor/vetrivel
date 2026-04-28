@@ -4,7 +4,7 @@ export interface UserPlace {
   locationId?: string; // Links this place to a specific Saved Map
   name: string;
   coordinates: { lat: number, lng: number };
-  category: 'nest' | 'interest';
+  category: 'nest' | 'interest' | 'pin';
   status: 'planned' | 'visited' | 'recommended' | 'wishlist' | 'place of interest';
   createdAt?: Date;
 }

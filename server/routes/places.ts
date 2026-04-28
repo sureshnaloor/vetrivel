@@ -93,7 +93,7 @@ placesRouter.post("/", async (req, res) => {
 placesRouter.patch("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { category, status } = req.body;
+    const { category, status, locationId } = req.body;
     const user = (req as any).user;
     
     const client = await clientPromise;
@@ -102,6 +102,7 @@ placesRouter.patch("/:id", async (req, res) => {
     const updateDoc: any = {};
     if (category) updateDoc.category = category;
     if (status) updateDoc.status = status;
+    if (locationId !== undefined) updateDoc.locationId = locationId || null;
     updateDoc.updatedAt = new Date();
     
     const result = await db.collection("user_places").findOneAndUpdate(
@@ -110,11 +111,15 @@ placesRouter.patch("/:id", async (req, res) => {
       { returnDocument: "after" }
     );
     
-    if (!result) {
+    const doc = result && typeof result === "object" && "value" in result
+      ? (result as { value: unknown }).value
+      : result;
+
+    if (!doc) {
       return res.status(404).json({ error: "Place not found" });
     }
     
-    res.json(result);
+    res.json(doc);
   } catch (error) {
     console.error("Error updating place:", error);
     res.status(500).json({ error: "Internal Server Error" });

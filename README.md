@@ -4,9 +4,9 @@ This template provides a minimal setup to get React working in Vite with HMR and
 
 ## App Environment Variables
 
-- `VITE_SPACE_MATCH_DISTANCE_KM`: distance threshold (in kilometers) used to auto-match a user's GPS current location to an existing saved space on login.  
+- `VITE_SPACE_MATCH_DISTANCE_KM`: distance threshold (in kilometers) used to (1) auto-match GPS to a saved space on login and (2) match a **pinned Explore Map temple** to an existing sacred space on the dashboard (same radius). Must use the `VITE_` prefix so the browser bundle can read it.  
   - Default: `3`
-  - Example in `.env`: `VITE_SPACE_MATCH_DISTANCE_KM=5`
+  - Example in `.env`: `VITE_SPACE_MATCH_DISTANCE_KM=25`
 
 Currently, two official plugins are available:
 

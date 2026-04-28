@@ -8,6 +8,7 @@ import CenterColumn from '../components/dashboard/CenterColumn';
 import RightRail from '../components/dashboard/RightRail';
 import DashboardFooter from '../components/dashboard/DashboardFooter';
 import LocationSelector from '../components/dashboard/LocationSelector';
+import { DashboardPinnedProvider } from '../contexts/DashboardPinnedContext';
 
 export default function Dashboard() {
   const { session } = useAuth();
@@ -16,6 +17,7 @@ export default function Dashboard() {
   const isDark = theme === 'dark';
 
   return (
+    <DashboardPinnedProvider>
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-black text-white' : 'bg-[#F4F1EA] text-[#141414]'}`}>
       
       {/* 
@@ -91,5 +93,6 @@ export default function Dashboard() {
       {/* Dashboard Specific Footer */}
       <DashboardFooter />
     </div>
+    </DashboardPinnedProvider>
   );
 }

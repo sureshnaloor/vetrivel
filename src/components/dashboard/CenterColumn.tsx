@@ -1,7 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTheme } from '../../hooks/useTheme';
 import { useLocation } from '../../contexts/LocationContext';
-import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2 } from 'lucide-react';
+import { useDashboardPinned } from '../../contexts/DashboardPinnedContext';
+import { findSpaceContainingPoint, getSpaceMatchDistanceKm, normalizeDocumentId, normalizeLatLng, getDistanceKm } from '../../lib/geo';
+import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2, X, AlertCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
+import { Button } from '../ui/button';
 import { GoogleMap, OverlayView } from '@react-google-maps/api';
 import { fetchPlaces, savePlace, updatePlace, deletePlace, type UserPlace, fetchCustomTemples, createCustomTemple, type CustomTemple } from '../../services/places';
 import { saveLocation } from '../../services/locations';
@@ -88,14 +92,22 @@ const ICON_TYPES = {
   INTEREST: { color: '#f97316', type: 'circle' },
   WISHLIST: { color: '#3b82f6', type: 'sparkle' },
   CUSTOM: { color: '#a855f7', type: 'circle' },
+  EXPLORER_PIN: { color: '#D13B3B', type: 'circle' },
 } as const;
 
 export default function CenterColumn() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const { coordinates, isLoaded, type: locType, address, savedLocations, activeLocationId, refreshLocations, selectLocation } = useLocation();
+  const { coordinates, isLoaded, type: locType, address, savedLocations, activeLocationId, refreshLocations, selectLocation, setLocation } = useLocation();
+  const { pinToAssign, setPinToAssign, refreshPinnedList } = useDashboardPinned();
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const pinToAssignRef = useRef(pinToAssign);
+  pinToAssignRef.current = pinToAssign;
   const [temples, setTemples] = useState<google.maps.places.PlaceResult[]>([]);
+  const [templeSearch, setTempleSearch] = useState('');
+  const [isSearchingTemples, setIsSearchingTemples] = useState(false);
   const [userPlaces, setUserPlaces] = useState<UserPlace[]>([]);
+  const [hiddenPlaces, setHiddenPlaces] = useState<string[]>([]);
   const [customTemples, setCustomTemples] = useState<CustomTemple[]>([]);
   const [loadingTemples, setLoadingTemples] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, lat: number, lng: number, placeId?: string, placeName?: string, isEmptyCoordinate?: boolean } | null>(null);
@@ -115,8 +127,18 @@ export default function CenterColumn() {
   const [pendingAssignment, setPendingAssignment] = useState<
     | { type: 'suggested'; temple: google.maps.places.PlaceResult; category: 'nest' | 'interest' }
     | { type: 'context'; category: 'nest' | 'interest' }
+    | { type: 'pinned'; place: UserPlace; category: 'nest' | 'interest' }
     | null
   >(null);
+  const [proximityAlert, setProximityAlert] = useState<{
+    type: 'suggested' | 'pinned' | 'context';
+    category: 'nest' | 'interest';
+    temple?: google.maps.places.PlaceResult;
+    place?: UserPlace;
+    nearestSpace?: (typeof savedLocations)[0];
+    distance: number;
+    coords: { lat: number, lng: number };
+  } | null>(null);
 
   // CSS for Marker Animations
   const markerAnimationStyles = `
@@ -140,6 +162,55 @@ export default function CenterColumn() {
     setIconUrls(urls);
   }, []);
 
+  const focusExplorerPinOnMap = useCallback((place: UserPlace) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const pc = normalizeLatLng(place.coordinates as unknown);
+    if (!pc) return;
+    map.panTo(pc);
+    map.setZoom(15);
+    setSelectedTwinkleId(place._id || null);
+  }, []);
+
+  useEffect(() => {
+    if (!pinToAssign) return;
+    focusExplorerPinOnMap(pinToAssign);
+  }, [pinToAssign, focusExplorerPinOnMap]);
+
+  /** When a pinned temple is selected, activate the nearest sacred space within env radius (if any) */
+  useEffect(() => {
+    if (!pinToAssign) return;
+    console.log('[CenterColumn] pinToAssign or savedLocations changed. Checking for match...');
+    const radiusKm = getSpaceMatchDistanceKm();
+    const match = findSpaceContainingPoint(pinToAssign.coordinates, savedLocations, radiusKm);
+    const matchId = match ? normalizeDocumentId(match._id as unknown) : null;
+    if (matchId && activeLocationId !== matchId) {
+      console.log('[CenterColumn] Found a matching space for pin. Auto-selecting:', matchId);
+      selectLocation(matchId);
+    }
+  }, [pinToAssign, savedLocations, activeLocationId, selectLocation]);
+
+  const dashboardMapCenter = useMemo(() => {
+    console.log('[CenterColumn] Evaluating dashboardMapCenter. pinToAssign:', !!pinToAssign, 'activeLocationId:', activeLocationId);
+    if (pinToAssign && (!activeLocationId || activeLocationId === normalizeDocumentId(findSpaceContainingPoint(pinToAssign.coordinates, savedLocations, getSpaceMatchDistanceKm())?._id as unknown))) {
+      const pin = normalizeLatLng(pinToAssign.coordinates as unknown);
+      if (pin) {
+         console.log('[CenterColumn] -> Returning pinToAssign coords:', pin);
+         return pin;
+      }
+    }
+    console.log('[CenterColumn] -> Returning context coordinates:', coordinates);
+    return coordinates ?? { lat: 25.3109, lng: 83.0076 };
+  }, [pinToAssign, coordinates, activeLocationId, savedLocations]);
+
+  useEffect(() => {
+    console.log('[CenterColumn] dashboardMapCenter changed to:', dashboardMapCenter);
+    if (mapInstanceRef.current && dashboardMapCenter) {
+       console.log('[CenterColumn] Panning map to new center!');
+      mapInstanceRef.current.panTo(dashboardMapCenter);
+    }
+  }, [dashboardMapCenter]);
+
   const updateScrollArrows = () => {
     if (scrollContainerRef.current) {
       const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
@@ -157,16 +228,25 @@ export default function CenterColumn() {
   };
 
   useEffect(() => {
+    console.log('[CenterColumn] session or activeLocationId changed. activeLocationId:', activeLocationId);
     if (session?.user) {
+      // Clear any pending pin assignment overlay when switching nests
+      setPinToAssign(null);
+      setContextMenu(null);
+
       if (!activeLocationId) {
         setUserPlaces([]);
       } else {
         // Always scope Nest/Interest to active space.
-        fetchPlaces(activeLocationId || undefined).then(setUserPlaces).catch(console.error);
+        console.log('[CenterColumn] Refetching places for activeLocationId:', activeLocationId);
+        fetchPlaces(activeLocationId || undefined).then((res) => {
+          console.log('[CenterColumn] userPlaces updated with len:', res.length);
+          setUserPlaces(res);
+        }).catch(console.error);
       }
       fetchCustomTemples().then(setCustomTemples).catch(console.error);
     }
-  }, [session, activeLocationId]);
+  }, [session, activeLocationId, setPinToAssign]);
 
   const handleMapRightClick = (e: google.maps.MapMouseEvent) => {
     if (e.latLng && e.domEvent) {
@@ -223,7 +303,10 @@ export default function CenterColumn() {
   };
 
   const openCreateSpaceFlow = (
-    pending: { type: 'suggested'; temple: google.maps.places.PlaceResult; category: 'nest' | 'interest' } | { type: 'context'; category: 'nest' | 'interest' }
+    pending:
+      | { type: 'suggested'; temple: google.maps.places.PlaceResult; category: 'nest' | 'interest' }
+      | { type: 'context'; category: 'nest' | 'interest' }
+      | { type: 'pinned'; place: UserPlace; category: 'nest' | 'interest' }
   ) => {
     if (savedLocations.length >= 10) {
       alert('You have reached the free plan limit of 10 spaces.');
@@ -284,6 +367,31 @@ export default function CenterColumn() {
   };
 
   const handleSaveLocation = async (category: 'nest' | 'interest') => {
+    if (!contextMenu) return;
+    
+    // Proximity check
+    let nearestDist = Infinity;
+    let nearestSpace = null;
+    const coords = { lat: contextMenu.lat, lng: contextMenu.lng };
+    for (const space of savedLocations) {
+      const dist = getDistanceKm(coords, space.coordinates);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestSpace = space;
+      }
+    }
+
+    if (nearestDist > 50 && savedLocations.length > 0) {
+      setProximityAlert({
+        type: 'context',
+        category,
+        nearestSpace: nearestSpace || undefined,
+        distance: nearestDist,
+        coords
+      });
+      return;
+    }
+
     if (!activeLocationId) {
       openCreateSpaceFlow({ type: 'context', category });
       return;
@@ -319,11 +427,98 @@ export default function CenterColumn() {
   };
 
   const handleSaveSuggestedPlace = async (temple: google.maps.places.PlaceResult, category: 'nest' | 'interest') => {
+    const lat = temple.geometry?.location?.lat();
+    const lng = temple.geometry?.location?.lng();
+    if (!lat || !lng) return;
+
+    // Proximity check
+    let nearestDist = Infinity;
+    let nearestSpace = null;
+    for (const space of savedLocations) {
+      const dist = getDistanceKm({ lat, lng }, space.coordinates);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestSpace = space;
+      }
+    }
+
+    if (nearestDist > 50 && savedLocations.length > 0) {
+      setProximityAlert({
+        type: 'suggested',
+        category,
+        temple,
+        nearestSpace: nearestSpace || undefined,
+        distance: nearestDist,
+        coords: { lat, lng }
+      });
+      return;
+    }
+
     if (!activeLocationId) {
       openCreateSpaceFlow({ type: 'suggested', temple, category });
       return;
     }
     await persistSuggestedPlace(temple, category);
+  };
+
+  const persistPinnedPlaceAssignment = async (
+    place: UserPlace,
+    category: 'nest' | 'interest',
+    locationIdOverride?: string
+  ) => {
+    if (!place._id) return;
+    const lid = locationIdOverride || activeLocationId;
+    if (!lid) return;
+    try {
+      const updated = await updatePlace(place._id, { category, locationId: lid });
+      setUserPlaces((prev) => {
+        const filtered = prev.filter((p) => p._id !== updated._id);
+        return [...filtered, updated];
+      });
+      refreshPinnedList();
+      setPinToAssign(null);
+    } catch (e) {
+      console.error('Failed to assign pinned place', e);
+    }
+  };
+
+  const handlePinnedAssign = (category: 'nest' | 'interest') => {
+    if (!pinToAssign) return;
+
+    // Proximity check
+    let nearestDist = Infinity;
+    let nearestSpace = null;
+    for (const space of savedLocations) {
+      const dist = getDistanceKm(pinToAssign.coordinates, space.coordinates);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestSpace = space;
+      }
+    }
+
+    if (nearestDist > 50 && savedLocations.length > 0) {
+      setProximityAlert({
+        type: 'pinned',
+        category,
+        place: pinToAssign,
+        nearestSpace: nearestSpace || undefined,
+        distance: nearestDist,
+        coords: pinToAssign.coordinates
+      });
+      return;
+    }
+
+    const radiusKm = getSpaceMatchDistanceKm();
+    const matchingSpace = findSpaceContainingPoint(pinToAssign.coordinates, savedLocations, radiusKm);
+    const matchId = matchingSpace ? normalizeDocumentId(matchingSpace._id as unknown) : null;
+
+    if (matchId) {
+      selectLocation(matchId);
+      void persistPinnedPlaceAssignment(pinToAssign, category, matchId);
+      return;
+    }
+
+    openCreateSpaceFlow({ type: 'pinned', place: pinToAssign, category });
   };
 
   const handleMovePlaceCategory = async (place: UserPlace, targetCategory: 'nest' | 'interest') => {
@@ -342,6 +537,7 @@ export default function CenterColumn() {
       const ok = await deletePlace(place._id);
       if (ok) {
         setUserPlaces(prev => prev.filter(p => p._id !== place._id));
+        setHiddenPlaces(prev => [...prev, place.placeId, place.name].filter(Boolean) as string[]);
       }
     } catch (e) {
       console.error('Failed to remove place', e);
@@ -349,14 +545,37 @@ export default function CenterColumn() {
   };
 
   const handleCreateSpaceAndContinue = async () => {
-    if (!spaceName.trim() || !coordinates || !pendingAssignment) return;
+    if (!spaceName.trim() || !pendingAssignment) return;
+    
+    let spaceCoords: {lat: number, lng: number} | null = null;
+    let spaceAddress = '';
+
+    if (pendingAssignment.type === 'pinned') {
+      spaceCoords = pendingAssignment.place.coordinates;
+      spaceAddress = pendingAssignment.place.name || '';
+    } else if (pendingAssignment.type === 'suggested') {
+      const lat = pendingAssignment.temple.geometry?.location?.lat();
+      const lng = pendingAssignment.temple.geometry?.location?.lng();
+      if (lat && lng) spaceCoords = { lat, lng };
+      spaceAddress = pendingAssignment.temple.name || '';
+    } else if (pendingAssignment.type === 'context') {
+      // Use proximity alert coords if available, otherwise contextMenu, otherwise fallback to GPS
+      spaceCoords = proximityAlert?.coords || (contextMenu ? { lat: contextMenu.lat, lng: contextMenu.lng } : coordinates);
+      spaceAddress = address || '';
+    }
+
+    if (!spaceCoords) return;
+
     setIsCreatingSpace(true);
     try {
       const savedSpace = await saveLocation({
         name: spaceName.trim(),
-        coordinates,
-        address: address || ''
+        coordinates: spaceCoords,
+        address: spaceAddress
       });
+      if (savedSpace.coordinates) {
+        setLocation('planned', savedSpace.coordinates, savedSpace.name || spaceName.trim());
+      }
       await refreshLocations();
       const newSpaceId = savedSpace._id || null;
       selectLocation(newSpaceId);
@@ -364,8 +583,10 @@ export default function CenterColumn() {
       if (newSpaceId) {
         if (pendingAssignment.type === 'suggested') {
           await persistSuggestedPlace(pendingAssignment.temple, pendingAssignment.category, newSpaceId);
-        } else {
+        } else if (pendingAssignment.type === 'context') {
           await persistContextMenuPlace(pendingAssignment.category, newSpaceId);
+        } else {
+          await persistPinnedPlaceAssignment(pendingAssignment.place, pendingAssignment.category, newSpaceId);
         }
       }
       setPendingAssignment(null);
@@ -420,6 +641,36 @@ export default function CenterColumn() {
       setLoadingTemples(false);
     });
   }, [isLoaded, coordinates]);
+
+  const runTempleNameSearch = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!isLoaded || !coordinates) return;
+    const term = templeSearch.trim();
+    if (!term) return;
+
+    setIsSearchingTemples(true);
+    const mapDiv = document.createElement('div');
+    const service = new window.google.maps.places.PlacesService(mapDiv);
+
+    const request: google.maps.places.PlaceSearchRequest = {
+      location: new window.google.maps.LatLng(coordinates.lat, coordinates.lng),
+      radius: 50000,
+      type: 'hindu_temple',
+      keyword: term,
+    };
+
+    service.nearbySearch(request, (results, status) => {
+      if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
+        const filtered = results
+          .filter((r) => (r.name || '').toLowerCase().includes(term.toLowerCase()))
+          .slice(0, 12);
+        setTemples(filtered);
+      } else {
+        setTemples([]);
+      }
+      setIsSearchingTemples(false);
+    });
+  };
 
   return (
     <div className={`flex flex-col gap-6 pb-24 ${isDark ? 'text-white' : 'text-[#141414]'}`}>
@@ -530,13 +781,108 @@ export default function CenterColumn() {
           </div>
         )}
 
+        {/* Temple-only Search */}
+        <form onSubmit={runTempleNameSearch} className="mt-2">
+          <div className={`p-4 rounded-xl border flex items-center gap-3 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
+            <input
+              value={templeSearch}
+              onChange={(ev) => setTempleSearch(ev.target.value)}
+              placeholder="Search temples by name (e.g. Vishnu, Shiva, Murugan)"
+              className={`flex-1 bg-transparent outline-none text-sm ${isDark ? 'placeholder:text-white/30' : 'placeholder:text-black/30'}`}
+            />
+            <button
+              type="submit"
+              disabled={isSearchingTemples || !templeSearch.trim()}
+              className={`px-3 py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 ${
+                isDark ? 'border-white/10 hover:bg-white/10' : 'border-black/10 hover:bg-black/5'
+              }`}
+              title="Search temples"
+            >
+              {isSearchingTemples ? 'Searching…' : 'Search'}
+            </button>
+          </div>
+          <p className={`mt-2 text-[11px] ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}>
+            Results are constrained to temples only (no restaurants/hotels/shops).
+          </p>
+        </form>
+
         {/* Embedded Persistent Map */}
         {isLoaded && (
           <div className={`mt-6 rounded-xl overflow-hidden shadow-sm border h-[340px] relative z-0 flex-shrink-0 ${isDark ? 'border-white/10' : 'border-[#e5e5e5]'}`}>
+            {pinToAssign && (
+              <div
+                className={`absolute top-2 left-2 right-2 z-[5] rounded-xl border p-3 shadow-lg ${isDark ? 'bg-[#131418]/95 border-white/10 backdrop-blur-sm' : 'bg-white/95 border-[#e5e5e5] backdrop-blur-sm'}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className={`text-[10px] uppercase tracking-wider font-medium ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}>
+                      Pinned from Explore
+                    </p>
+                    <p className="font-semibold text-sm truncate">{pinToAssign.name}</p>
+                    <p className={`text-[11px] mt-1 ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}>
+                      {activeLocationId ? (
+                        <>
+                          Active space:{' '}
+                          <span className="font-medium text-[#0D9488]">
+                            {savedLocations.find((l) => l._id === activeLocationId)?.name || 'this space'}
+                          </span>
+                          . If this temple is within ~{getSpaceMatchDistanceKm()} km of another saved space, that space opens automatically when you assign.
+                        </>
+                      ) : (
+                        <>
+                          If this temple is within ~{getSpaceMatchDistanceKm()} km of a saved sacred space, we open that space and assign there. Otherwise we ask you to name a new space centered on this temple.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPinToAssign(null)}
+                    className={`p-1 rounded-lg flex-shrink-0 ${isDark ? 'hover:bg-white/10 text-white/70' : 'hover:bg-black/5 text-[#6E6A63]'}`}
+                    aria-label="Dismiss"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => handlePinnedAssign('nest')}
+                    className={`flex-1 min-w-[120px] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 ${isDark ? 'bg-[#0D9488]/20 border border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/30' : 'bg-[#0D9488]/10 border border-[#0D9488]/25 text-[#0D9488] hover:bg-[#0D9488]/15'}`}
+                  >
+                    <House className="w-3.5 h-3.5" /> Add to Nest
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePinnedAssign('interest')}
+                    className={`flex-1 min-w-[120px] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 ${isDark ? 'bg-blue-500/15 border border-blue-400/30 text-blue-300 hover:bg-blue-500/25' : 'bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100'}`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" /> Temple of Interest
+                  </button>
+                </div>
+              </div>
+            )}
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
-              center={coordinates || { lat: 25.3109, lng: 83.0076 }}
-              zoom={13}
+              center={dashboardMapCenter}
+              zoom={pinToAssign ? 15 : 13}
+              onLoad={(map) => {
+                mapInstanceRef.current = map;
+                // Add a listener to pan map smoothly when dashboardMapCenter changes
+                // React-google-maps sometimes abrupts.
+                if (dashboardMapCenter) {
+                  map.panTo(dashboardMapCenter);
+                }
+                const p = pinToAssignRef.current;
+                if (p) {
+                  const pc = normalizeLatLng(p.coordinates as unknown);
+                  if (pc) {
+                    map.panTo(pc);
+                    map.setZoom(15);
+                  }
+                  setSelectedTwinkleId(p._id || null);
+                }
+              }}
               onRightClick={handleMapRightClick}
               onClick={handleMapClick}
               options={{
@@ -548,7 +894,14 @@ export default function CenterColumn() {
             >
               <style>{markerAnimationStyles}</style>
               {/* Render dynamic temples as pins */}
-              {temples.map((temple, idx) => {
+              {temples
+                .filter(temple => {
+                  // Hide background generic temples if they are already saved as a userPlace, or if they were explicitly removed
+                  if (hiddenPlaces.includes(temple.place_id || temple.name || '')) return false;
+                  if (userPlaces.some(up => up.placeId === temple.place_id || up.name === temple.name)) return false;
+                  return true;
+                })
+                .map((temple, idx) => {
                 const lat = temple.geometry?.location?.lat();
                 const lng = temple.geometry?.location?.lng();
                 if (!lat || !lng) return null;
@@ -582,11 +935,37 @@ export default function CenterColumn() {
               })}
 
               {/* Render Saved User Places */}
+              {pinToAssign && (
+                <OverlayView
+                  key="explorer-pin-assign"
+                  position={pinToAssign.coordinates}
+                  mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+                >
+                  <div
+                    className={`relative -translate-x-1/2 -translate-y-full cursor-default ${selectedTwinkleId === pinToAssign._id ? 'marker-twinkle' : ''}`}
+                    title={pinToAssign.name}
+                  >
+                    {iconUrls.EXPLORER_PIN && (
+                      <img
+                        src={iconUrls.EXPLORER_PIN}
+                        className="w-9 h-9 custom-marker-shadow"
+                        alt=""
+                        onError={(e) => (e.currentTarget.style.display = 'none')}
+                      />
+                    )}
+                  </div>
+                </OverlayView>
+              )}
+
               {userPlaces.map((place, idx) => {
-                let iconKey = 'NEST';
-                if (place.status === 'visited') iconKey = 'VISITED';
-                if (place.status === 'recommended' || place.status === 'wishlist') iconKey = 'WISHLIST';
-                if (place.category === 'interest' || place.status === 'place of interest') iconKey = 'INTEREST';
+                let iconKey: keyof typeof ICON_TYPES = 'NEST';
+                if (place.category === 'pin') {
+                  iconKey = 'EXPLORER_PIN';
+                } else {
+                  if (place.status === 'visited') iconKey = 'VISITED';
+                  if (place.status === 'recommended' || place.status === 'wishlist') iconKey = 'WISHLIST';
+                  if (place.category === 'interest' || place.status === 'place of interest') iconKey = 'INTEREST';
+                }
                 const isSelected = selectedTwinkleId === place._id;
                 
                 return (
@@ -733,7 +1112,9 @@ export default function CenterColumn() {
           <div className={`fixed z-[140] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm p-6 rounded-2xl shadow-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
             <h3 className="font-display text-xl font-semibold mb-2">Name this space</h3>
             <p className={`text-sm mb-4 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
-              Save this explored location as a space before adding temples. Free plan supports up to 10 spaces.
+              {pendingAssignment?.type === 'pinned'
+                ? 'This space is saved with the temple’s map coordinates so choosing it later recenters the map here. Name it, then your pinned temple is added to Nest or Interest in this space. Free plan: up to 10 spaces.'
+                : 'Save this explored location as a space before adding temples. Free plan supports up to 10 spaces.'}
             </p>
             <input
               type="text"
@@ -894,6 +1275,74 @@ export default function CenterColumn() {
           ))}
         </div>
       </div>
+
+      {/* 50KM Proximity Alert Dialog */}
+      <Dialog open={!!proximityAlert} onOpenChange={(open) => !open && setProximityAlert(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-[#f97316] mb-2">
+              <AlertCircle className="w-5 h-5" />
+              <DialogTitle>Far from Home</DialogTitle>
+            </div>
+            <DialogDescription className="text-base">
+              The temple you pinned is <strong>{Math.round(proximityAlert?.distance || 0)}km</strong> away from your nearest existing nest{' '}
+              {proximityAlert?.nearestSpace && (
+                <span className="font-semibold text-foreground">({proximityAlert.nearestSpace.name})</span>
+              )}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className={`p-4 rounded-xl border mb-2 ${isDark ? 'bg-white/5 border-white/10' : 'bg-orange-50/50 border-orange-100'}`}>
+            <p className="text-sm font-medium">Suggestion:</p>
+            <p className="text-sm opacity-80 mt-1">
+              For a better experience, we recommend organizing temples into nests that are physically close to each other.
+            </p>
+          </div>
+          <DialogFooter className="flex flex-col gap-2 sm:flex-col items-stretch">
+            <Button 
+              className="w-full bg-[#0D9488] hover:bg-[#0D9488]/90 text-white"
+              onClick={() => {
+                if (!proximityAlert) return;
+                const { type, temple, category, place } = proximityAlert;
+                setProximityAlert(null);
+                if (type === 'suggested' && temple) {
+                  openCreateSpaceFlow({ type, temple, category });
+                } else if (type === 'pinned' && place) {
+                  openCreateSpaceFlow({ type, place, category });
+                } else if (type === 'context') {
+                  openCreateSpaceFlow({ type, category });
+                }
+              }}
+            >
+              Create New Nest (Recommended)
+            </Button>
+            {proximityAlert?.nearestSpace && (
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={async () => {
+                  if (!proximityAlert || !proximityAlert.nearestSpace) return;
+                  const { type, temple, category, place, nearestSpace } = proximityAlert;
+                  const targetId = nearestSpace._id ? String(nearestSpace._id) : null;
+                  if (!targetId) return;
+
+                  setProximityAlert(null);
+                  selectLocation(targetId);
+
+                  if (type === 'suggested' && temple) {
+                    await persistSuggestedPlace(temple, category, targetId);
+                  } else if (type === 'pinned' && place) {
+                    await persistPinnedPlaceAssignment(place, category, targetId);
+                  } else if (type === 'context') {
+                    await persistContextMenuPlace(category, targetId);
+                  }
+                }}
+              >
+                Add to {proximityAlert.nearestSpace.name} anyway
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

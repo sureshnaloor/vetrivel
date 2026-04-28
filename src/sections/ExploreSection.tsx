@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -10,6 +11,7 @@ interface ExploreSectionProps {
 }
 
 const ExploreSection = ({ className = '' }: ExploreSectionProps) => {
+  const navigate = useNavigate();
   const sectionRef = useRef<HTMLElement>(null);
   const collageRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLDivElement>(null);
@@ -203,7 +205,7 @@ const ExploreSection = ({ className = '' }: ExploreSectionProps) => {
           Pan the map, filter by tradition, and save places to your personal
           journey.
         </p>
-        <button className="btn-primary">
+        <button className="btn-primary" onClick={() => navigate('/map')}>
           Open the map
           <ArrowRight className="w-4 h-4 ml-2" />
         </button>

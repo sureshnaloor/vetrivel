@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import SignIn from './pages/SignIn';
 import SignOut from './pages/SignOut';
 import PlaceholderPage from './pages/PlaceholderPage';
+import ExploreMap from './pages/ExploreMap';
 import { LocationProvider } from './contexts/LocationContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
@@ -25,7 +26,11 @@ function App() {
                 <Dashboard />
               </LocationProvider>
             } />
-            <Route path="/map" element={<PlaceholderPage title="Temple Map" />} />
+            <Route path="/map" element={
+              <LocationProvider>
+                <ExploreMap />
+              </LocationProvider>
+            } />
             <Route path="/temples" element={<PlaceholderPage title="Temples" />} />
             <Route path="/events" element={<PlaceholderPage title="Events" />} />
             <Route path="/nests" element={<PlaceholderPage title="Nests" />} />

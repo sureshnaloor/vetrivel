@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { useJsApiLoader } from '@react-google-maps/api';
 import { fetchLocations, type UserLocation } from '../services/locations';
+import { getDistanceKm, getSpaceMatchDistanceKm, normalizeDocumentId, normalizeLatLng } from '../lib/geo';
 
 export type LocationType = 'current' | 'planned';
 
@@ -33,26 +34,7 @@ const LocationContext = createContext<LocationContextType | undefined>(undefined
 
 const LIBRARIES: ("places" | "geometry" | "drawing" | "visualization")[] = ['places'];
 const DEFAULT_COORDS: Coordinates = { lat: 25.3109, lng: 83.0076 };
-const SPACE_MATCH_DISTANCE_KM = (() => {
-  const rawValue = import.meta.env.VITE_SPACE_MATCH_DISTANCE_KM;
-  const parsed = Number(rawValue);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 3;
-})();
-
-const toRadians = (value: number) => (value * Math.PI) / 180;
-
-const getDistanceKm = (a: Coordinates, b: Coordinates): number => {
-  const earthRadiusKm = 6371;
-  const dLat = toRadians(b.lat - a.lat);
-  const dLng = toRadians(b.lng - a.lng);
-  const lat1 = toRadians(a.lat);
-  const lat2 = toRadians(b.lat);
-  const x =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.sin(dLng / 2) * Math.sin(dLng / 2) * Math.cos(lat1) * Math.cos(lat2);
-  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-  return earthRadiusKm * c;
-};
+const SPACE_MATCH_DISTANCE_KM = getSpaceMatchDistanceKm();
 
 export function LocationProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LocationState>({
@@ -128,19 +110,27 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   };
 
   const selectLocation = (id: string | null) => {
+    console.log('[LocationContext] selectLocation called with id:', id);
     setState(prev => {
       const newState = { ...prev, activeLocationId: id };
       if (id) {
         localStorage.setItem('activeLocationId', id);
-        const loc = prev.savedLocations.find(l => l._id === id);
+        const loc = prev.savedLocations.find(
+          (l) => normalizeDocumentId(l._id as unknown) === String(id)
+        );
+        console.log('[LocationContext] selectLocation found loc from savedLocations:', !!loc, loc?.name, 'with raw coords:', loc?.coordinates);
         if (loc) {
+          const coords = normalizeLatLng(loc.coordinates as unknown) ?? (loc.coordinates as Coordinates);
+          console.log('[LocationContext] Setting new state coordinates to:', coords);
           return {
             ...newState,
             type: 'planned',
-            coordinates: loc.coordinates,
+            coordinates: coords,
             address: loc.name,
             isLoading: false
           };
+        } else {
+           console.warn('[LocationContext] loc not found for id:', id);
         }
       } else {
         localStorage.removeItem('activeLocationId');
@@ -152,29 +142,39 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!state.coordinates || state.savedLocations.length === 0) return;
 
-    const nearest = state.savedLocations.reduce<{ id: string | null; distance: number }>(
-      (acc, loc) => {
-        if (!loc._id) return acc;
-        const distance = getDistanceKm(state.coordinates as Coordinates, loc.coordinates);
-        if (distance < acc.distance) {
-          return { id: loc._id, distance };
+    // Only auto-select a nearby space if we are relying on the user's physical GPS location.
+    // If the user explicitly clicked a space ('planned'), do not aggressively override it.
+    if (state.type === 'current') {
+      const userCoords = normalizeLatLng(state.coordinates as unknown);
+      if (!userCoords) return;
+
+      const nearest = state.savedLocations.reduce<{ id: string | null; distance: number }>(
+        (acc, loc) => {
+          const locId = normalizeDocumentId(loc._id as unknown);
+          if (!locId) return acc;
+          const lc = normalizeLatLng(loc.coordinates as unknown);
+          if (!lc) return acc;
+          const distance = getDistanceKm(userCoords, lc);
+          if (distance < acc.distance) {
+            return { id: locId, distance };
+          }
+          return acc;
+        },
+        { id: null, distance: Number.POSITIVE_INFINITY }
+      );
+
+      if (nearest.id && nearest.distance <= SPACE_MATCH_DISTANCE_KM) {
+        if (state.activeLocationId !== nearest.id) {
+          selectLocation(nearest.id);
         }
-        return acc;
-      },
-      { id: null, distance: Number.POSITIVE_INFINITY }
-    );
-
-    if (nearest.id && nearest.distance <= SPACE_MATCH_DISTANCE_KM) {
-      if (state.activeLocationId !== nearest.id) {
-        selectLocation(nearest.id);
+        return;
       }
-      return;
-    }
 
-    if (state.type === 'current' && state.activeLocationId) {
-      selectLocation(null);
+      if (state.activeLocationId) {
+        selectLocation(null);
+      }
     }
-  }, [state.coordinates, state.savedLocations]);
+  }, [state.coordinates, state.savedLocations, state.type]);
 
   useEffect(() => {
     requestCurrentLocation();
