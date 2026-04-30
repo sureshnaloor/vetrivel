@@ -33,7 +33,7 @@ interface LocationContextType extends LocationState {
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
 
 const LIBRARIES: ("places" | "geometry" | "drawing" | "visualization")[] = ['places'];
-const DEFAULT_COORDS: Coordinates = { lat: 25.3109, lng: 83.0076 };
+// No hardcoded fallback — coordinates stay null until GPS resolves or user picks a space
 const SPACE_MATCH_DISTANCE_KM = getSpaceMatchDistanceKm();
 
 export function LocationProvider({ children }: { children: ReactNode }) {
@@ -63,8 +63,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         activeLocationId: null,
         isLoading: false,
         error: 'Geolocation is not supported by your browser',
-        coordinates: DEFAULT_COORDS,
-        address: 'Varanasi (Default)'
+        coordinates: null,
+        address: 'Location unavailable'
       }));
       return;
     }
@@ -92,8 +92,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           activeLocationId: null,
           isLoading: false,
           error: 'Unable to retrieve your location',
-          coordinates: DEFAULT_COORDS,
-          address: 'Varanasi (Default)'
+          coordinates: null,
+          address: 'Location unavailable'
         }));
       },
       { timeout: 10000 }

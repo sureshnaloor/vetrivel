@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTheme } from '../../hooks/useTheme';
 import { useLocation } from '../../contexts/LocationContext';
 import { useDashboardPinned } from '../../contexts/DashboardPinnedContext';
+import { useSelectedTemple } from '../../contexts/SelectedTempleContext';
 import { findSpaceContainingPoint, getSpaceMatchDistanceKm, normalizeDocumentId, normalizeLatLng, getDistanceKm } from '../../lib/geo';
 import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2, X, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
@@ -121,6 +122,7 @@ export default function CenterColumn() {
   const [selectedTwinkleId, setSelectedTwinkleId] = useState<string | null>(null);
   const [iconUrls, setIconUrls] = useState<Record<string, string>>({});
   const { session } = useAuth();
+  const { setSelectedTemple } = useSelectedTemple();
   const [isCreateSpaceModalOpen, setIsCreateSpaceModalOpen] = useState(false);
   const [spaceName, setSpaceName] = useState('');
   const [isCreatingSpace, setIsCreatingSpace] = useState(false);
@@ -200,7 +202,7 @@ export default function CenterColumn() {
       }
     }
     console.log('[CenterColumn] -> Returning context coordinates:', coordinates);
-    return coordinates ?? { lat: 25.3109, lng: 83.0076 };
+    return coordinates ?? null;
   }, [pinToAssign, coordinates, activeLocationId, savedLocations]);
 
   useEffect(() => {
@@ -725,7 +727,14 @@ export default function CenterColumn() {
                   <div 
                     key={idx} 
                     className={`min-w-[240px] max-w-[240px] p-4 rounded-xl border flex-shrink-0 cursor-pointer transition-transform hover:-translate-y-1 snap-start ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'} ${selectedTwinkleId === temple.place_id ? 'ring-2 ring-[#D13B3B]' : ''}`}
-                    onClick={() => setSelectedTwinkleId(prev => prev === temple.place_id ? null : (temple.place_id || null))}
+                    onClick={() => {
+                      const isDeselect = selectedTwinkleId === temple.place_id;
+                      setSelectedTwinkleId(isDeselect ? null : (temple.place_id || null));
+                      if (isDeselect) { setSelectedTemple(null); } else {
+                        const lat = temple.geometry?.location?.lat(); const lng = temple.geometry?.location?.lng();
+                        if (lat && lng) setSelectedTemple({ name: temple.name || 'Temple', placeId: temple.place_id, coordinates: { lat, lng }, vicinity: temple.vicinity, rating: temple.rating, userRatingsTotal: temple.user_ratings_total });
+                      }
+                    }}
                   >
                     <h3 className="font-semibold mb-1 truncate" title={temple.name}>{temple.name}</h3>
                     <p className={`text-xs flex items-start gap-1 mb-3 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'} line-clamp-2 min-h-[32px]`}>
@@ -807,7 +816,15 @@ export default function CenterColumn() {
         </form>
 
         {/* Embedded Persistent Map */}
-        {isLoaded && (
+        {isLoaded && !dashboardMapCenter && (
+          <div className={`mt-6 rounded-xl overflow-hidden shadow-sm border h-[340px] flex items-center justify-center ${isDark ? 'border-white/10 bg-[#131418]' : 'border-[#e5e5e5] bg-[#fffaf4]'}`}>
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-6 h-6 animate-spin text-[#D13B3B]" />
+              <p className={`text-xs ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}>Acquiring your location…</p>
+            </div>
+          </div>
+        )}
+        {isLoaded && dashboardMapCenter && (
           <div className={`mt-6 rounded-xl overflow-hidden shadow-sm border h-[340px] relative z-0 flex-shrink-0 ${isDark ? 'border-white/10' : 'border-[#e5e5e5]'}`}>
             {pinToAssign && (
               <div
@@ -918,7 +935,11 @@ export default function CenterColumn() {
                       title={temple.name}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedTwinkleId((prev: string | null) => prev === temple.place_id ? null : (temple.place_id || null));
+                        const isDeselect = selectedTwinkleId === temple.place_id;
+                        setSelectedTwinkleId(isDeselect ? null : (temple.place_id || null));
+                        if (isDeselect) { setSelectedTemple(null); } else {
+                          setSelectedTemple({ name: temple.name || 'Temple', placeId: temple.place_id, coordinates: { lat, lng }, vicinity: temple.vicinity, rating: temple.rating, userRatingsTotal: temple.user_ratings_total });
+                        }
                       }}
                     >
                       {iconUrls.NEARBY && (
@@ -979,7 +1000,11 @@ export default function CenterColumn() {
                       title={place.name}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedTwinkleId((prev: string | null) => prev === place._id ? null : (place._id || place.name || null));
+                        const isDeselect = selectedTwinkleId === place._id;
+                        setSelectedTwinkleId(isDeselect ? null : (place._id || place.name || null));
+                        if (isDeselect) { setSelectedTemple(null); } else {
+                          setSelectedTemple({ name: place.name, placeId: place.placeId, coordinates: place.coordinates });
+                        }
                       }}
                     >
                       {iconUrls[iconKey] && (
@@ -1167,7 +1192,7 @@ export default function CenterColumn() {
             <div 
                key={i} 
                className={`p-5 rounded-2xl border flex flex-col justify-between min-h-[160px] cursor-pointer transition-transform hover:-translate-y-1 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'} ${selectedTwinkleId === place._id ? 'ring-2 ring-[#0D9488]' : ''}`}
-               onClick={() => setSelectedTwinkleId((prev: string | null) => prev === place._id ? null : (place._id || place.name || null))}
+               onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else setSelectedTemple({ name: place.name, placeId: place.placeId, coordinates: place.coordinates }); }}
             >
               <div>
                 <div className="flex justify-between items-start mb-2">
@@ -1220,7 +1245,7 @@ export default function CenterColumn() {
             <div 
                key={i} 
                className={`p-4 flex items-center gap-4 rounded-xl border cursor-pointer transition-transform hover:-translate-y-1 ${isDark ? 'border-blue-500/20 bg-blue-500/5' : 'border-blue-500/20 bg-blue-50'} ${selectedTwinkleId === place._id ? 'ring-2 ring-blue-500' : ''}`}
-               onClick={() => setSelectedTwinkleId((prev: string | null) => prev === place._id ? null : (place._id || place.name || null))}
+               onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else setSelectedTemple({ name: place.name, placeId: place.placeId, coordinates: place.coordinates }); }}
             >
               <div className={`w-10 h-10 rounded-full flex flex-shrink-0 items-center justify-center ${isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-white text-blue-500 shadow-sm'}`}>
                 <MapPin className="w-4 h-4" />
@@ -1268,12 +1293,52 @@ export default function CenterColumn() {
       <div className="mt-4">
         <h2 className="font-display text-xl font-semibold mb-4">Recent Highlights</h2>
         <div className="grid grid-cols-3 gap-3">
-          {[1, 2, 3].map((i) => (
-             <div key={i} className={`aspect-square rounded-xl overflow-hidden ${isDark ? 'bg-white/5' : 'bg-black/5'}`}>
-               {/* Image placeholder */}
-             </div>
-          ))}
+          {/* Animated SVG Placeholder — Star Burst */}
+          <div className={`aspect-square rounded-xl overflow-hidden flex flex-col items-center justify-center gap-3 ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <style>{`
+                @keyframes highlights-pulse { 0%,100%{opacity:.25;transform:scale(.92)} 50%{opacity:.7;transform:scale(1)} }
+                .hl-star { animation: highlights-pulse 2.4s ease-in-out infinite; transform-origin: center; }
+              `}</style>
+              <path className="hl-star" d="M24 4L27.5 18.5H42L30 27L33.5 42L24 33L14.5 42L18 27L6 18.5H20.5L24 4Z" fill={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(209,59,59,0.15)'} stroke={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(209,59,59,0.3)'} strokeWidth="1.5" strokeLinejoin="round"/>
+              <circle className="hl-star" cx="24" cy="22" r="4" fill={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(209,59,59,0.2)'} style={{animationDelay: '0.3s'}}/>
+            </svg>
+            <span className={`text-[10px] font-medium tracking-wide ${isDark ? 'text-white/30' : 'text-black/25'}`}>Festival Moments</span>
+          </div>
+          {/* Animated SVG Placeholder — Camera / Photo */}
+          <div className={`aspect-square rounded-xl overflow-hidden flex flex-col items-center justify-center gap-3 ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <style>{`
+                @keyframes highlights-float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+                .hl-cam { animation: highlights-float 3s ease-in-out infinite; }
+                .hl-cam-flash { animation: highlights-pulse 1.8s ease-in-out infinite; animation-delay: 0.6s; }
+              `}</style>
+              <rect className="hl-cam" x="6" y="14" width="36" height="26" rx="4" fill={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(13,148,136,0.1)'} stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(13,148,136,0.25)'} strokeWidth="1.5"/>
+              <circle className="hl-cam" cx="24" cy="27" r="8" fill="none" stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(13,148,136,0.25)'} strokeWidth="1.5"/>
+              <circle className="hl-cam-flash" cx="24" cy="27" r="4" fill={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(13,148,136,0.15)'}/>
+              <rect className="hl-cam" x="18" y="8" width="12" height="8" rx="2" fill={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(13,148,136,0.1)'} stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(13,148,136,0.25)'} strokeWidth="1.5"/>
+            </svg>
+            <span className={`text-[10px] font-medium tracking-wide ${isDark ? 'text-white/30' : 'text-black/25'}`}>Temple Photos</span>
+          </div>
+          {/* Animated SVG Placeholder — Temple Silhouette */}
+          <div className={`aspect-square rounded-xl overflow-hidden flex flex-col items-center justify-center gap-3 ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <style>{`
+                @keyframes highlights-glow { 0%,100%{opacity:.2} 50%{opacity:.55} }
+                .hl-temple { animation: highlights-glow 2.8s ease-in-out infinite; }
+              `}</style>
+              <path className="hl-temple" d="M24 6L30 16H18L24 6Z" fill={isDark ? 'rgba(255,255,255,0.12)' : 'rgba(249,115,22,0.12)'} stroke={isDark ? 'rgba(255,255,255,0.22)' : 'rgba(249,115,22,0.25)'} strokeWidth="1.5" strokeLinejoin="round"/>
+              <rect className="hl-temple" x="14" y="16" width="20" height="4" rx="1" fill={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(249,115,22,0.1)'} stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(249,115,22,0.22)'} strokeWidth="1.5" style={{animationDelay:'0.4s'}}/>
+              <rect className="hl-temple" x="16" y="20" width="16" height="18" rx="1" fill={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(249,115,22,0.08)'} stroke={isDark ? 'rgba(255,255,255,0.18)' : 'rgba(249,115,22,0.2)'} strokeWidth="1.5" style={{animationDelay:'0.8s'}}/>
+              <rect className="hl-temple" x="21" y="28" width="6" height="10" rx="1" fill={isDark ? 'rgba(255,255,255,0.12)' : 'rgba(249,115,22,0.12)'} style={{animationDelay:'1.2s'}}/>
+              <line x1="10" y1="38" x2="38" y2="38" stroke={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(249,115,22,0.18)'} strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+            <span className={`text-[10px] font-medium tracking-wide ${isDark ? 'text-white/30' : 'text-black/25'}`}>Darshan Updates</span>
+          </div>
         </div>
+        <p className={`text-xs text-center mt-3 ${isDark ? 'text-white/30' : 'text-black/30'}`}>
+          Follow temples and devotees to see highlights here
+        </p>
       </div>
 
       {/* 50KM Proximity Alert Dialog */}

@@ -179,21 +179,62 @@ export default function LeftRail() {
       <div className={`p-6 rounded-2xl border flex-1 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
         <h2 className="font-display text-lg font-semibold mb-4">Following Feed</h2>
         <div className="space-y-5">
-          <div className="flex gap-3">
-            <div className={`w-8 h-8 rounded-full flex-shrink-0 ${isDark ? 'bg-white/10' : 'bg-gray-100'}`}></div>
-            <div>
-              <p className="text-sm"><strong>ISKCON</strong> posted:</p>
-              <p className={`text-xs mt-1 ${isDark ? 'text-white/70' : 'text-[#6E6A63]'}`}>"Special Janmashtami Pooja registration is now open."</p>
+          {/* Placeholder Item 1 — Bell / Notification */}
+          <div className="flex gap-3 items-start">
+            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <style>{`
+                  @keyframes feed-ring { 0%,100%{transform:rotate(0)} 15%{transform:rotate(8deg)} 30%{transform:rotate(-8deg)} 45%{transform:rotate(4deg)} 60%{transform:rotate(0)} }
+                  .feed-bell { animation: feed-ring 3s ease-in-out infinite; transform-origin: top center; }
+                `}</style>
+                <path className="feed-bell" d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.18)'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)'} strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <div className="flex-1 space-y-2 pt-0.5">
+              <div className={`h-3 rounded-full w-3/4 ${isDark ? 'bg-white/5' : 'bg-black/[0.04]'}`} style={{animation: 'highlights-pulse 2s ease-in-out infinite'}}/>
+              <div className={`h-2.5 rounded-full w-full ${isDark ? 'bg-white/[0.03]' : 'bg-black/[0.025]'}`} style={{animation: 'highlights-pulse 2s ease-in-out infinite 0.3s'}}/>
             </div>
           </div>
-          <div className="flex gap-3">
-            <div className={`w-8 h-8 rounded-full flex-shrink-0 ${isDark ? 'bg-white/10' : 'bg-gray-100'}`}></div>
-            <div>
-              <p className="text-sm"><strong>@riya_m</strong> visited</p>
-              <p className={`text-xs mt-1 ${isDark ? 'text-white/70' : 'text-[#6E6A63]'}`}>Ram Mandir, Ayodhya.</p>
+          {/* Placeholder Item 2 — Footsteps / Visited */}
+          <div className="flex gap-3 items-start">
+            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <style>{`
+                  @keyframes feed-walk { 0%,100%{opacity:.2} 30%{opacity:.5} 60%{opacity:.2} }
+                  .feed-step1 { animation: feed-walk 2.5s ease-in-out infinite; }
+                  .feed-step2 { animation: feed-walk 2.5s ease-in-out infinite 0.8s; }
+                `}</style>
+                <circle className="feed-step1" cx="9" cy="8" r="3" fill={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)'}/>
+                <path className="feed-step1" d="M9 11c-4 0-6 2-6 5v2h12v-2c0-3-2-5-6-5z" fill={isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}/>
+                <path className="feed-step2" d="M16 7l2 2m0 0l2 2m-2-2l-2 2m2-2l2-2" stroke={isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)'} strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <div className="flex-1 space-y-2 pt-0.5">
+              <div className={`h-3 rounded-full w-1/2 ${isDark ? 'bg-white/5' : 'bg-black/[0.04]'}`} style={{animation: 'highlights-pulse 2s ease-in-out infinite 0.5s'}}/>
+              <div className={`h-2.5 rounded-full w-5/6 ${isDark ? 'bg-white/[0.03]' : 'bg-black/[0.025]'}`} style={{animation: 'highlights-pulse 2s ease-in-out infinite 0.8s'}}/>
+            </div>
+          </div>
+          {/* Placeholder Item 3 — Om / Temple post */}
+          <div className="flex gap-3 items-start">
+            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <style>{`
+                  @keyframes feed-breathe { 0%,100%{opacity:.15;transform:scale(.95)} 50%{opacity:.4;transform:scale(1.05)} }
+                  .feed-om { animation: feed-breathe 3.5s ease-in-out infinite; transform-origin: center; }
+                `}</style>
+                <text className="feed-om" x="12" y="17" textAnchor="middle" fontSize="16" fontFamily="serif" fill={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.15)'}>ॐ</text>
+              </svg>
+            </div>
+            <div className="flex-1 space-y-2 pt-0.5">
+              <div className={`h-3 rounded-full w-2/3 ${isDark ? 'bg-white/5' : 'bg-black/[0.04]'}`} style={{animation: 'highlights-pulse 2s ease-in-out infinite 1s'}}/>
+              <div className={`h-2.5 rounded-full w-3/4 ${isDark ? 'bg-white/[0.03]' : 'bg-black/[0.025]'}`} style={{animation: 'highlights-pulse 2s ease-in-out infinite 1.3s'}}/>
             </div>
           </div>
         </div>
+        <p className={`text-[10px] text-center mt-4 ${isDark ? 'text-white/25' : 'text-black/25'}`}>
+          Follow temples & devotees to see their updates
+        </p>
       </div>
     </div>
   );
