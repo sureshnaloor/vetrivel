@@ -5,7 +5,6 @@ import { useAuth } from '../../hooks/useAuth';
 import { fetchTempleContent, createTempleContent, deleteTempleContent, getTempleKey, type TempleContent } from '../../services/templeContent';
 import { MapPin, Info, Clock, Image as ImageIcon, MessageSquare, ExternalLink, Loader2, Trash2, Plus } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 interface PlaceDetails {
   name?: string;
@@ -28,12 +27,10 @@ export default function RightRail() {
   const { selectedTemple } = useSelectedTemple();
   const { isLoaded } = useLocation();
   const { session } = useAuth();
-  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'info' | 'pooja' | 'media' | 'qa'>('info');
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
-  const [chatInput, setChatInput] = useState('');
   const [expandedHistory, setExpandedHistory] = useState(false);
   const [selectedPhotoIdx, setSelectedPhotoIdx] = useState<number | null>(null);
   const serviceRef = useRef<google.maps.places.PlacesService | null>(null);
