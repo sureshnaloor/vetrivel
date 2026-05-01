@@ -1,8 +1,6 @@
 import express from "express";
-import { getSession } from "@auth/express";
-import { ObjectId } from "mongodb";
 import clientPromise from "../lib/db";
-import { authConfig } from "../auth.config";
+import { requireUser } from "../middleware/requireUser";
 
 export const customTemplesRouter = express.Router();
 
@@ -25,7 +23,7 @@ customTemplesRouter.get("/", async (req, res) => {
 
 // POST /api/custom-temples
 // Add a new custom crowd-sourced temple
-customTemplesRouter.post("/", async (req, res) => {
+customTemplesRouter.post("/", requireUser, async (req, res) => {
   const { name, coordinates, description } = req.body;
   
   if (!name || !coordinates) {
@@ -33,11 +31,7 @@ customTemplesRouter.post("/", async (req, res) => {
   }
   
   try {
-    // Auth check for creation
-    const session = await getSession(req, authConfig);
-    if (!session || !session.user || !session.user.email) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    const user = (req as any).user;
     
     const client = await clientPromise;
     const db = client.db();
@@ -46,8 +40,8 @@ customTemplesRouter.post("/", async (req, res) => {
       name,
       coordinates,
       description: description || "",
-      creatorEmail: session.user.email,
-      creatorName: session.user.name || "Anonymous Devotee",
+      creatorEmail: user.email,
+      creatorName: user.name || "Anonymous Devotee",
       createdByIp: req.ip || req.headers['x-forwarded-for'] || "unknown",
       createdAt: new Date(),
       status: 'active'

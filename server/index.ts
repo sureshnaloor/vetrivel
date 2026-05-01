@@ -7,6 +7,7 @@ import { placesRouter } from "./routes/places";
 import { customTemplesRouter } from "./routes/customTemples";
 import { locationsRouter } from "./routes/locations";
 import { templeContentRouter } from "./routes/templeContent";
+import { mobileAuthRouter } from "./routes/mobileAuth";
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ if (!process.env.AUTH_URL) {
 
 // Setup Auth.js v5 route
 app.use("/api/auth", ExpressAuth(authConfig));
+app.use("/api/mobile/auth", mobileAuthRouter);
 
 // Protected API Routes
 app.use("/api/places", placesRouter);

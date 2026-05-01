@@ -1,20 +1,9 @@
 import express from "express";
-import { getSession } from "@auth/express";
 import { ObjectId } from "mongodb";
 import clientPromise from "../lib/db";
-import { authConfig } from "../auth.config";
+import { requireUser } from "../middleware/requireUser";
 
 export const templeContentRouter = express.Router();
-
-// Middleware to check authentication
-const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const session = await getSession(req, authConfig);
-  if (!session || !session.user || !session.user.email) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  (req as any).user = session.user;
-  next();
-};
 
 // GET /api/temple-content?templeKey=X
 // Public read — anyone can view community content
@@ -43,7 +32,7 @@ templeContentRouter.get("/", async (req, res) => {
 
 // POST /api/temple-content
 // Create a new content entry (requires auth)
-templeContentRouter.post("/", requireAuth, async (req, res) => {
+templeContentRouter.post("/", requireUser, async (req, res) => {
   try {
     const user = (req as any).user;
     const { templeKey, tab, content, mediaUrl, mediaType } = req.body;
@@ -87,7 +76,7 @@ templeContentRouter.post("/", requireAuth, async (req, res) => {
 
 // PATCH /api/temple-content/:id
 // Edit own content entry (requires auth)
-templeContentRouter.patch("/:id", requireAuth, async (req, res) => {
+templeContentRouter.patch("/:id", requireUser, async (req, res) => {
   try {
     const { id } = req.params;
     const user = (req as any).user;
@@ -128,7 +117,7 @@ templeContentRouter.patch("/:id", requireAuth, async (req, res) => {
 
 // DELETE /api/temple-content/:id
 // Delete own content entry (requires auth)
-templeContentRouter.delete("/:id", requireAuth, async (req, res) => {
+templeContentRouter.delete("/:id", requireUser, async (req, res) => {
   try {
     const { id } = req.params;
     const user = (req as any).user;

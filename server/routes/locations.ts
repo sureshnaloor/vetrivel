@@ -1,22 +1,11 @@
 import express from "express";
-import { getSession } from "@auth/express";
 import { ObjectId } from "mongodb";
 import clientPromise from "../lib/db";
-import { authConfig } from "../auth.config";
+import { requireUser } from "../middleware/requireUser";
 
 export const locationsRouter = express.Router();
 
-// Middleware to check authentication
-const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const session = await getSession(req, authConfig);
-  if (!session || !session.user || !session.user.email) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  (req as any).user = session.user;
-  next();
-};
-
-locationsRouter.use(requireAuth);
+locationsRouter.use(requireUser);
 
 // GET /api/locations
 locationsRouter.get("/", async (req, res) => {
