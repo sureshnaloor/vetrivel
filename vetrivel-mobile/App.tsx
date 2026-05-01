@@ -1,13 +1,15 @@
+import { NavigationContainer } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { SafeAreaView, StyleSheet, View, ActivityIndicator } from "react-native";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   clearAuthSession,
   getStoredAuthSession,
   type MobileAuthSession,
 } from "./src/auth";
+import { AppNavigator } from "./src/navigation/AppNavigator";
 import { LoginScreen } from "./src/screens/LoginScreen";
-import { DashboardScreen } from "./src/screens/DashboardScreen";
 
 export default function App() {
   const [session, setSession] = useState<MobileAuthSession | null>(null);
@@ -21,29 +23,35 @@ export default function App() {
 
   if (booting) {
     return (
-      <SafeAreaView style={styles.centered}>
-        <ActivityIndicator size="large" />
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <SafeAreaView style={styles.app}>
+    <SafeAreaProvider style={styles.app}>
       <StatusBar style="dark" />
-      <View style={styles.container}>
-        {session ? (
-          <DashboardScreen
-            session={session}
-            onLogout={async () => {
-              await clearAuthSession();
-              setSession(null);
-            }}
-          />
-        ) : (
+      {session ? (
+        <NavigationContainer>
+          <View style={styles.authedRoot}>
+            <AppNavigator
+              session={session}
+              onLogout={async () => {
+                await clearAuthSession();
+                setSession(null);
+              }}
+            />
+          </View>
+        </NavigationContainer>
+      ) : (
+        <View style={styles.guestRoot}>
           <LoginScreen onLoggedIn={setSession} />
-        )}
-      </View>
-    </SafeAreaView>
+        </View>
+      )}
+    </SafeAreaProvider>
   );
 }
 
@@ -52,11 +60,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
-  container: {
+  authedRoot: {
+    flex: 1,
+  },
+  guestRoot: {
     flex: 1,
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 16,
+    backgroundColor: "#fff",
   },
   centered: {
     flex: 1,

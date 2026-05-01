@@ -7,6 +7,85 @@ export const placesRouter = express.Router();
 
 placesRouter.use(requireUser);
 
+const NEARBY_MAX_RADIUS_M = 50_000;
+
+// GET /api/places/nearby
+// Proxy Google Places Nearby Search (hindu_temple), same idea as web dashboard map.
+placesRouter.get("/nearby", async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const radiusRaw = Number(req.query.radius);
+  const keyword =
+    typeof req.query.keyword === "string" ? req.query.keyword.trim() : "";
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: "Query params lat and lng are required" });
+  }
+
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({
+      error: "Nearby search is not configured (set GOOGLE_MAPS_API_KEY or VITE_GOOGLE_MAPS_API_KEY)",
+    });
+  }
+
+  const radius = Math.min(
+    Number.isFinite(radiusRaw) && radiusRaw > 0 ? radiusRaw : NEARBY_MAX_RADIUS_M,
+    NEARBY_MAX_RADIUS_M
+  );
+
+  try {
+    const url = new URL(
+      "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    );
+    url.searchParams.set("location", `${lat},${lng}`);
+    url.searchParams.set("radius", String(radius));
+    url.searchParams.set("type", "hindu_temple");
+    if (keyword) {
+      url.searchParams.set("keyword", keyword);
+    }
+    url.searchParams.set("key", apiKey);
+
+    const gRes = await fetch(url.toString());
+    const data = (await gRes.json()) as {
+      status: string;
+      results?: Array<{
+        place_id?: string;
+        name?: string;
+        geometry?: { location?: { lat: number; lng: number } };
+        vicinity?: string;
+        rating?: number;
+        user_ratings_total?: number;
+      }>;
+      error_message?: string;
+    };
+
+    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+      console.error("[places/nearby] Google status:", data.status, data.error_message);
+      return res.status(502).json({
+        error: data.error_message || data.status || "Google Places request failed",
+      });
+    }
+
+    const raw = data.results || [];
+    const results = raw.slice(0, 20).map((r) => ({
+      placeId: r.place_id || "",
+      name: r.name || "Temple",
+      lat: r.geometry?.location?.lat ?? 0,
+      lng: r.geometry?.location?.lng ?? 0,
+      vicinity: r.vicinity,
+      rating: r.rating,
+      userRatingsTotal: r.user_ratings_total,
+    }));
+
+    res.json({ results });
+  } catch (e) {
+    console.error("Error in /api/places/nearby:", e);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // GET /api/places
 // Fetch all saved places for the authenticated user
 placesRouter.get("/", async (req, res) => {
