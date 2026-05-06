@@ -1,4 +1,5 @@
 import axios from "axios";
+import { Platform } from "react-native";
 import type { MobileAuthSession } from "./auth";
 import { normalizeLatLng, type LatLng } from "./lib/geo";
 import { normalizeDocumentId } from "./lib/id";
@@ -7,7 +8,12 @@ declare const process: {
   env: Record<string, string | undefined>;
 };
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000";
+const API_BASE_URL =
+  (Platform.OS === "android"
+    ? process.env.EXPO_PUBLIC_API_URL_ANDROID
+    : process.env.EXPO_PUBLIC_API_URL_IOS) ||
+  process.env.EXPO_PUBLIC_API_URL ||
+  "http://localhost:3000";
 
 const api = axios.create({
   baseURL: API_BASE_URL,

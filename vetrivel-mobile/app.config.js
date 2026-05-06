@@ -6,19 +6,30 @@ const path = require("path");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const appJson = require("./app.json");
 
-/** Ensure Maps key is in process.env when prebuild runs (some shells skip Expo's .env injection). */
-(function loadMapsKeyFromDotenv() {
-  if (process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY) return;
+/** Ensure Maps keys are in process.env when prebuild runs (some shells skip Expo's .env injection). */
+(function loadMapsKeysFromDotenv() {
+  if (
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY &&
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY &&
+    process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY
+  ) {
+    return;
+  }
   const envPath = path.join(__dirname, ".env");
   if (!fs.existsSync(envPath)) return;
   const text = fs.readFileSync(envPath, "utf8");
+  const wanted = new Set([
+    "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY",
+    "EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY",
+    "EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY",
+  ]);
   for (const line of text.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");
     if (eq === -1) continue;
     const k = trimmed.slice(0, eq).trim();
-    if (k !== "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY") continue;
+    if (!wanted.has(k)) continue;
     let v = trimmed.slice(eq + 1).trim();
     if (
       (v.startsWith('"') && v.endsWith('"')) ||
@@ -26,12 +37,15 @@ const appJson = require("./app.json");
     ) {
       v = v.slice(1, -1);
     }
-    process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = v;
-    break;
+    process.env[k] = v;
   }
 })();
 
-const googleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+const defaultGoogleMapsApiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || "";
+const iosGoogleMapsApiKey =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_IOS_API_KEY || defaultGoogleMapsApiKey;
+const androidGoogleMapsApiKey =
+  process.env.EXPO_PUBLIC_GOOGLE_MAPS_ANDROID_API_KEY || defaultGoogleMapsApiKey;
 
 module.exports = {
   expo: {
@@ -50,7 +64,7 @@ module.exports = {
       ...appJson.expo.ios,
       config: {
         ...(appJson.expo.ios?.config || {}),
-        googleMapsApiKey: googleMapsApiKey,
+        googleMapsApiKey: iosGoogleMapsApiKey,
       },
     },
     android: {
@@ -58,7 +72,7 @@ module.exports = {
       config: {
         ...(appJson.expo.android?.config || {}),
         googleMaps: {
-          apiKey: googleMapsApiKey,
+          apiKey: androidGoogleMapsApiKey,
         },
       },
     },
