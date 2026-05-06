@@ -86,6 +86,124 @@ placesRouter.get("/nearby", async (req, res) => {
   }
 });
 
+// GET /api/places/details?placeId=...
+// Google Place Details (JSON) for mobile — mirrors web RightRail PlacesService.getDetails fields.
+placesRouter.get("/details", async (req, res) => {
+  const placeId =
+    typeof req.query.placeId === "string" ? req.query.placeId.trim() : "";
+  if (!placeId) {
+    return res
+      .status(400)
+      .json({ error: "placeId query parameter is required" });
+  }
+
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({
+      error:
+        "Place details is not configured (set GOOGLE_MAPS_API_KEY or VITE_GOOGLE_MAPS_API_KEY)",
+    });
+  }
+
+  try {
+    const fields = [
+      "name",
+      "formatted_address",
+      "formatted_phone_number",
+      "website",
+      "rating",
+      "user_ratings_total",
+      "opening_hours",
+      "reviews",
+      "editorial_summary",
+      "photos",
+      "url",
+    ].join(",");
+
+    const url = new URL(
+      "https://maps.googleapis.com/maps/api/place/details/json"
+    );
+    url.searchParams.set("place_id", placeId);
+    url.searchParams.set("fields", fields);
+    url.searchParams.set("key", apiKey);
+
+    const gRes = await fetch(url.toString());
+    const data = (await gRes.json()) as {
+      status: string;
+      result?: {
+        name?: string;
+        formatted_address?: string;
+        formatted_phone_number?: string;
+        website?: string;
+        rating?: number;
+        user_ratings_total?: number;
+        opening_hours?: { weekday_text?: string[] };
+        reviews?: Array<{
+          author_name?: string;
+          rating?: number;
+          text?: string;
+        }>;
+        editorial_summary?: { overview?: string };
+        photos?: Array<{ photo_reference?: string }>;
+        url?: string;
+      };
+      error_message?: string;
+    };
+
+    if (data.status !== "OK" || !data.result) {
+      console.error(
+        "[places/details] Google status:",
+        data.status,
+        data.error_message
+      );
+      return res.status(502).json({
+        error:
+          data.error_message ||
+          data.status ||
+          "Google Place Details request failed",
+      });
+    }
+
+    const r = data.result;
+    const photoUrls = (r.photos || [])
+      .slice(0, 8)
+      .map((p) => {
+        const ref = p.photo_reference;
+        if (!ref) return null;
+        const photoUrl = new URL(
+          "https://maps.googleapis.com/maps/api/place/photo"
+        );
+        photoUrl.searchParams.set("maxwidth", "600");
+        photoUrl.searchParams.set("photo_reference", ref);
+        photoUrl.searchParams.set("key", apiKey);
+        return photoUrl.toString();
+      })
+      .filter((u): u is string => u != null);
+
+    res.json({
+      name: r.name,
+      formattedAddress: r.formatted_address,
+      formattedPhoneNumber: r.formatted_phone_number,
+      website: r.website,
+      rating: r.rating,
+      userRatingsTotal: r.user_ratings_total,
+      weekdayText: r.opening_hours?.weekday_text || [],
+      reviews: (r.reviews || []).map((rev) => ({
+        authorName: rev.author_name,
+        rating: rev.rating,
+        text: rev.text,
+      })),
+      editorialOverview: r.editorial_summary?.overview ?? null,
+      photoUrls,
+      mapsUrl: r.url ?? null,
+    });
+  } catch (e) {
+    console.error("Error in /api/places/details:", e);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // GET /api/places
 // Fetch all saved places for the authenticated user
 placesRouter.get("/", async (req, res) => {

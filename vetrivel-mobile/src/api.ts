@@ -4,6 +4,18 @@ import type { MobileAuthSession } from "./auth";
 import { normalizeLatLng, type LatLng } from "./lib/geo";
 import { normalizeDocumentId } from "./lib/id";
 
+/** Stable key shared with web `getTempleKey` for `/api/temple-content`. */
+export function getTempleKey(
+  placeId?: string | null,
+  name?: string
+): string {
+  if (placeId) return placeId;
+  return (name || "unknown")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
 declare const process: {
   env: Record<string, string | undefined>;
 };
@@ -186,4 +198,128 @@ export async function createPlace(
     throw new Error("Invalid place response from server");
   }
   return p;
+}
+
+export type GooglePlaceDetails = {
+  name?: string;
+  formattedAddress?: string;
+  formattedPhoneNumber?: string;
+  website?: string;
+  rating?: number;
+  userRatingsTotal?: number;
+  weekdayText?: string[];
+  reviews?: Array<{ authorName?: string; rating?: number; text?: string }>;
+  editorialOverview?: string | null;
+  photoUrls?: string[];
+  mapsUrl?: string | null;
+};
+
+/** Google Place Details via server proxy (requires auth). */
+export async function getPlaceDetails(
+  accessToken: string,
+  placeId: string
+): Promise<GooglePlaceDetails> {
+  const { data } = await api.get("/api/places/details", {
+    headers: authHeaders(accessToken),
+    params: { placeId },
+  });
+  return data as GooglePlaceDetails;
+}
+
+export type TempleContentTab = "info" | "pooja" | "media" | "qa";
+
+export type TempleContent = {
+  _id: string;
+  templeKey: string;
+  userEmail: string;
+  userName: string;
+  tab: TempleContentTab;
+  content: string;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+function mapTempleContentRow(row: Record<string, unknown>): TempleContent | null {
+  const id = normalizeDocumentId(row._id);
+  if (!id) return null;
+  const tab = row.tab;
+  const t: TempleContentTab =
+    tab === "info" || tab === "pooja" || tab === "media" || tab === "qa"
+      ? tab
+      : "info";
+  return {
+    _id: id,
+    templeKey: String(row.templeKey ?? ""),
+    userEmail: String(row.userEmail ?? ""),
+    userName: String(row.userName ?? ""),
+    tab: t,
+    content: String(row.content ?? ""),
+    mediaUrl: row.mediaUrl != null ? String(row.mediaUrl) : null,
+    mediaType: row.mediaType != null ? String(row.mediaType) : null,
+    createdAt: row.createdAt != null ? String(row.createdAt) : undefined,
+    updatedAt: row.updatedAt != null ? String(row.updatedAt) : undefined,
+  };
+}
+
+/** Public read — no token required. */
+export async function fetchTempleContent(
+  templeKey: string
+): Promise<TempleContent[]> {
+  const { data } = await api.get("/api/temple-content", {
+    params: { templeKey },
+  });
+  const rows = data as Record<string, unknown>[];
+  const out: TempleContent[] = [];
+  for (const row of rows) {
+    const c = mapTempleContentRow(row);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+export type NewTempleContent = {
+  templeKey: string;
+  tab: TempleContentTab;
+  content: string;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+};
+
+export async function createTempleContent(
+  accessToken: string,
+  entry: NewTempleContent
+): Promise<TempleContent> {
+  const { data } = await api.post("/api/temple-content", entry, {
+    headers: authHeaders(accessToken),
+  });
+  const row = data as Record<string, unknown>;
+  const c = mapTempleContentRow(row);
+  if (!c) throw new Error("Invalid temple content response");
+  return c;
+}
+
+export async function updateTempleContent(
+  accessToken: string,
+  id: string,
+  updates: Partial<Pick<TempleContent, "content" | "mediaUrl" | "mediaType">>
+): Promise<TempleContent> {
+  const { data } = await api.patch(`/api/temple-content/${id}`, updates, {
+    headers: authHeaders(accessToken),
+  });
+  const row = data as Record<string, unknown>;
+  const c = mapTempleContentRow(row);
+  if (!c) throw new Error("Invalid temple content response");
+  return c;
+}
+
+export async function deleteTempleContent(
+  accessToken: string,
+  id: string
+): Promise<boolean> {
+  const { status } = await api.delete(`/api/temple-content/${id}`, {
+    headers: authHeaders(accessToken),
+  });
+  return status === 200;
 }

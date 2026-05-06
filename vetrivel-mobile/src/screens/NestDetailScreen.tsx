@@ -14,6 +14,10 @@ import {
 } from "react-native";
 import type { NearbyTemple, UserPlace } from "../api";
 import { createPlace, getPlacesForLocation, searchNearbyTemples } from "../api";
+import {
+  TempleDetailModal,
+  type TempleDetailSelection,
+} from "../components/TempleDetailModal";
 import { SpaceMap } from "../components/SpaceMap";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -21,17 +25,54 @@ type NavProps = NativeStackScreenProps<RootStackParamList, "NestDetail">;
 
 type Props = NavProps & {
   accessToken: string;
+  userEmail: string;
 };
 
-function PlaceCard({ place }: { place: UserPlace }) {
+function userPlaceToDetail(p: UserPlace): TempleDetailSelection {
+  return {
+    placeId: p.placeId || null,
+    name: p.name,
+    lat: p.coordinates.lat,
+    lng: p.coordinates.lng,
+  };
+}
+
+function nearbyToDetail(t: NearbyTemple): TempleDetailSelection {
+  return {
+    placeId: t.placeId || null,
+    name: t.name,
+    lat: t.lat,
+    lng: t.lng,
+    vicinity: t.vicinity,
+    rating: t.rating,
+    userRatingsTotal: t.userRatingsTotal,
+  };
+}
+
+function PlaceCard({
+  place,
+  onOpenDetail,
+  highlighted,
+}: {
+  place: UserPlace;
+  onOpenDetail?: () => void;
+  highlighted?: boolean;
+}) {
   return (
-    <View style={styles.placeCard}>
+    <Pressable
+      onPress={onOpenDetail}
+      style={[
+        styles.placeCard,
+        highlighted && styles.placeCardSelected,
+      ]}
+    >
       <Text style={styles.placeName}>{place.name}</Text>
       <Text style={styles.placeMeta}>
         {place.status || "—"}
         {place.placeId ? " · Google place" : ""}
+        {onOpenDetail ? " · Tap for details" : ""}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -40,11 +81,15 @@ function Section({
   subtitle,
   places,
   emptyLabel,
+  onOpenPlace,
+  selectedMarkerId,
 }: {
   title: string;
   subtitle?: string;
   places: UserPlace[];
   emptyLabel: string;
+  onOpenPlace?: (p: UserPlace) => void;
+  selectedMarkerId?: string | null;
 }) {
   return (
     <View style={styles.section}>
@@ -53,13 +98,24 @@ function Section({
       {places.length === 0 ? (
         <Text style={styles.sectionEmpty}>{emptyLabel}</Text>
       ) : (
-        places.map((p) => <PlaceCard key={p._id} place={p} />)
+        places.map((p) => (
+          <PlaceCard
+            key={p._id}
+            place={p}
+            onOpenDetail={
+              onOpenPlace ? () => onOpenPlace(p) : undefined
+            }
+            highlighted={
+              selectedMarkerId === `saved-${p._id}`
+            }
+          />
+        ))
       )}
     </View>
   );
 }
 
-export function NestDetailScreen({ route, accessToken }: Props) {
+export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   const { locationId, address, latitude, longitude } = route.params;
   const nestCenter = useMemo(
     () => ({ lat: latitude, lng: longitude }),
@@ -78,6 +134,9 @@ export function NestDetailScreen({ route, accessToken }: Props) {
   const [manualOpen, setManualOpen] = useState(false);
   const [manualName, setManualName] = useState("");
   const [manualCategory, setManualCategory] = useState<"nest" | "interest">("interest");
+  const [detailTemple, setDetailTemple] = useState<TempleDetailSelection | null>(
+    null
+  );
 
   const loadPlaces = useCallback(
     async (opts?: { refresh?: boolean; silent?: boolean }) => {
@@ -234,6 +293,48 @@ export function NestDetailScreen({ route, accessToken }: Props) {
     loadNearby(searchInput);
   }, [loadNearby, searchInput]);
 
+  const openSavedPlaceDetail = useCallback((p: UserPlace) => {
+    setDetailTemple(userPlaceToDetail(p));
+  }, []);
+
+  const openNearbyDetail = useCallback((t: NearbyTemple) => {
+    setDetailTemple(nearbyToDetail(t));
+  }, []);
+
+  const onMapMarkerPress = useCallback(
+    (markerId: string) => {
+      if (markerId.startsWith("saved-")) {
+        const id = markerId.slice("saved-".length);
+        const p = places.find((x) => x._id === id);
+        if (p) setDetailTemple(userPlaceToDetail(p));
+        return;
+      }
+      if (markerId.startsWith("near-")) {
+        const pid = markerId.slice("near-".length);
+        const t = nearby.find((x) => x.placeId === pid);
+        if (t) setDetailTemple(nearbyToDetail(t));
+      }
+    },
+    [places, nearby]
+  );
+
+  const detailMarkerId = useMemo(() => {
+    if (!detailTemple) return null;
+    if (detailTemple.placeId) {
+      const savedByPid = places.find((p) => p.placeId === detailTemple.placeId);
+      if (savedByPid) return `saved-${savedByPid._id}`;
+    }
+    const savedByCoords = places.find(
+      (p) =>
+        Math.abs(p.coordinates.lat - detailTemple.lat) < 1e-5 &&
+        Math.abs(p.coordinates.lng - detailTemple.lng) < 1e-5 &&
+        p.name === detailTemple.name
+    );
+    if (savedByCoords) return `saved-${savedByCoords._id}`;
+    if (detailTemple.placeId) return `near-${detailTemple.placeId}`;
+    return null;
+  }, [detailTemple, places]);
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -269,6 +370,7 @@ export function NestDetailScreen({ route, accessToken }: Props) {
           center={nestCenter}
           markers={mapMarkers}
           showsUserLocation={false}
+          onMarkerPress={onMapMarkerPress}
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -278,12 +380,16 @@ export function NestDetailScreen({ route, accessToken }: Props) {
           subtitle="Anchor temples for this space"
           places={nestTemples}
           emptyLabel="No nest temples yet — add from Nearby below or create manually."
+          onOpenPlace={openSavedPlaceDetail}
+          selectedMarkerId={detailMarkerId}
         />
 
         <Section
           title="Temples of interest"
           places={interestTemples}
           emptyLabel="No temples of interest yet."
+          onOpenPlace={openSavedPlaceDetail}
+          selectedMarkerId={detailMarkerId}
         />
 
         {pins.length > 0 ? (
@@ -292,6 +398,8 @@ export function NestDetailScreen({ route, accessToken }: Props) {
             subtitle="Pins linked to this space"
             places={pins}
             emptyLabel=""
+            onOpenPlace={openSavedPlaceDetail}
+            selectedMarkerId={detailMarkerId}
           />
         ) : null}
 
@@ -328,18 +436,25 @@ export function NestDetailScreen({ route, accessToken }: Props) {
           {nearby.map((t) => {
             const saved = savedPlaceIds.has(t.placeId);
             const busy = savingPlaceId === t.placeId;
+            const nearSelected = detailMarkerId === `near-${t.placeId}`;
             return (
-              <View key={t.placeId} style={styles.nearbyCard}>
-                <Text style={styles.placeName}>{t.name}</Text>
-                {t.vicinity ? (
-                  <Text style={styles.placeMeta} numberOfLines={2}>
-                    {t.vicinity}
+              <View
+                key={t.placeId}
+                style={[styles.nearbyCard, nearSelected && styles.nearbyCardSelected]}
+              >
+                <Pressable onPress={() => openNearbyDetail(t)}>
+                  <Text style={styles.placeName}>{t.name}</Text>
+                  {t.vicinity ? (
+                    <Text style={styles.placeMeta} numberOfLines={2}>
+                      {t.vicinity}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.placeMeta}>
+                    {t.rating != null ? `★ ${t.rating}` : "No rating"}
+                    {t.userRatingsTotal != null ? ` (${t.userRatingsTotal})` : ""}
                   </Text>
-                ) : null}
-                <Text style={styles.placeMeta}>
-                  {t.rating != null ? `★ ${t.rating}` : "No rating"}
-                  {t.userRatingsTotal != null ? ` (${t.userRatingsTotal})` : ""}
-                </Text>
+                  <Text style={styles.tapDetails}>Tap card for details · Google Places</Text>
+                </Pressable>
                 {saved ? (
                   <Text style={styles.savedBadge}>Already in this space</Text>
                 ) : (
@@ -369,6 +484,14 @@ export function NestDetailScreen({ route, accessToken }: Props) {
           <Text style={styles.manualBtnText}>Add temple by name (this location)</Text>
         </Pressable>
       </ScrollView>
+
+      <TempleDetailModal
+        visible={detailTemple != null}
+        onClose={() => setDetailTemple(null)}
+        temple={detailTemple}
+        accessToken={accessToken}
+        userEmail={userEmail}
+      />
 
       <Modal visible={manualOpen} animationType="slide" transparent>
         <View style={styles.modalBackdrop}>
@@ -489,6 +612,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: "#fff",
   },
+  placeCardSelected: {
+    borderColor: "#D13B3B",
+    borderWidth: 2,
+  },
   placeName: { fontSize: 15, fontWeight: "600" },
   placeMeta: { fontSize: 12, color: "#666", marginTop: 4 },
   searchRow: { flexDirection: "row", gap: 8, marginBottom: 12, alignItems: "center" },
@@ -516,6 +643,16 @@ const styles = StyleSheet.create({
     padding: 12,
     marginTop: 10,
     backgroundColor: "#fff",
+  },
+  nearbyCardSelected: {
+    borderColor: "#D13B3B",
+    borderWidth: 2,
+  },
+  tapDetails: {
+    fontSize: 11,
+    color: "#D13B3B",
+    marginTop: 6,
+    fontWeight: "600",
   },
   savedBadge: {
     marginTop: 10,

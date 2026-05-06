@@ -29,7 +29,13 @@ export function AppNavigator({ session, onLogout }: Props) {
         name="NestDetail"
         options={({ route }) => ({ title: route.params.name })}
       >
-        {(props) => <NestDetailScreen {...props} accessToken={session.accessToken} />}
+        {(props) => (
+          <NestDetailScreen
+            {...props}
+            accessToken={session.accessToken}
+            userEmail={session.user.email}
+          />
+        )}
       </Stack.Screen>
     </Stack.Navigator>
   );
