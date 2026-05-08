@@ -28,7 +28,9 @@ export default function SignOut() {
       const callbackInput = document.createElement("input");
       callbackInput.type = "hidden";
       callbackInput.name = "callbackUrl";
-      callbackInput.value = "http://localhost:5173/";
+      // callbackInput.value = "http://localhost:5173/";
+      const APP_URL = import.meta.env.VITE_APP_URL || 'http://localhost:5173';
+      callbackInput.value = `${APP_URL}/`;
       form.appendChild(callbackInput);
 
       document.body.appendChild(form);

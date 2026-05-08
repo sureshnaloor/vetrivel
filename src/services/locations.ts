@@ -7,7 +7,7 @@ export interface UserLocation {
   createdAt?: string;
 }
 
-const API_BASE = 'http://localhost:3000/api/locations';
+const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/locations`;
 
 export const fetchLocations = async (): Promise<UserLocation[]> => {
   const res = await fetch(API_BASE, { credentials: 'include' });

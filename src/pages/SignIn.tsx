@@ -36,7 +36,9 @@ export default function SignIn() {
       const callbackInput = document.createElement("input");
       callbackInput.type = "hidden";
       callbackInput.name = "callbackUrl";
-      callbackInput.value = "http://localhost:5173/dashboard";
+      // callbackInput.value = "http://localhost:5173/dashboard";
+      const APP_URL = import.meta.env.VITE_APP_URL || 'http://localhost:5173';
+      callbackInput.value = `${APP_URL}/dashboard`;
       form.appendChild(callbackInput);
 
       document.body.appendChild(form);

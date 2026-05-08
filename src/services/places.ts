@@ -9,8 +9,8 @@ export interface UserPlace {
   createdAt?: Date;
 }
 
-const API_BASE = 'http://localhost:3000/api/places';
-
+// const API_BASE = 'http://localhost:3000/api/places';
+const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/places`;
 export const fetchPlaces = async (locationId?: string): Promise<UserPlace[]> => {
   const url = locationId ? `${API_BASE}?locationId=${locationId}` : API_BASE;
   const res = await fetch(url, {credentials: 'include'});
@@ -64,13 +64,15 @@ export interface CustomTemple {
 }
 
 export const fetchCustomTemples = async (): Promise<CustomTemple[]> => {
-  const res = await fetch('http://localhost:3000/api/custom-temples', {credentials: 'include'});
+  // const res = await fetch('http://localhost:3000/api/custom-temples', {credentials: 'include'});
+  const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/custom-temples`, {credentials: 'include'});
   if (!res.ok) throw new Error('Failed to fetch custom temples');
   return res.json();
 };
 
 export const createCustomTemple = async (temple: CustomTemple): Promise<CustomTemple> => {
-  const res = await fetch('http://localhost:3000/api/custom-temples', {
+  // const res = await fetch('http://localhost:3000/api/custom-temples', {
+  const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/custom-temples`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',

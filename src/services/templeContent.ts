@@ -13,8 +13,8 @@ export interface TempleContent {
 
 export type NewTempleContent = Pick<TempleContent, 'templeKey' | 'tab' | 'content' | 'mediaUrl' | 'mediaType'>;
 
-const API_BASE = 'http://localhost:3000/api/temple-content';
-
+// const API_BASE = 'http://localhost:3000/api/temple-content';
+const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/temple-content`;
 export const fetchTempleContent = async (templeKey: string): Promise<TempleContent[]> => {
   const res = await fetch(`${API_BASE}?templeKey=${encodeURIComponent(templeKey)}`, {
     credentials: 'include',
