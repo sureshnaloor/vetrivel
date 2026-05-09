@@ -112,6 +112,7 @@ export function SpaceMap({
         rotateEnabled={false}
         pitchEnabled={false}
         loadingEnabled={Platform.OS === "android"}
+        poiClickEnabled={Platform.OS === "android" ? false : undefined}
         onMapReady={() => {
           mapReadyRef.current = true;
           if (Platform.OS === "android") {

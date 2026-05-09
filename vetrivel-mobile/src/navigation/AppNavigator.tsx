@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { MobileAuthSession } from "../auth";
+import { CreateSpaceScreen } from "../screens/CreateSpaceScreen";
 import { HomeScreen } from "../screens/HomeScreen";
 import { NestDetailScreen } from "../screens/NestDetailScreen";
 import type { RootStackParamList } from "./types";
@@ -23,6 +24,11 @@ export function AppNavigator({ session, onLogout }: Props) {
       <Stack.Screen name="Home" options={{ title: "My spaces" }}>
         {(props) => (
           <HomeScreen {...props} session={session} onLogout={onLogout} />
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="CreateSpace" options={{ title: "New space" }}>
+        {(props) => (
+          <CreateSpaceScreen {...props} accessToken={session.accessToken} />
         )}
       </Stack.Screen>
       <Stack.Screen

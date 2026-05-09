@@ -1,4 +1,5 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -11,7 +12,7 @@ import {
   View,
 } from "react-native";
 import type { UserLocation } from "../api";
-import { getLocations, getUnscopedPlaces } from "../api";
+import { getLocations, getUnscopedPlaces, getApiErrorMessage } from "../api";
 import { SpaceMap, type MapMarker } from "../components/SpaceMap";
 import type { MobileAuthSession } from "../auth";
 import type { LatLng } from "../lib/geo";
@@ -50,7 +51,7 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
         setLocations(locList);
         setUnscopedCount(unscoped.length);
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Failed to load spaces");
+        setError(getApiErrorMessage(e));
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -59,9 +60,11 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
     [session.accessToken]
   );
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      void load(false);
+    }, [load])
+  );
 
   useEffect(() => {
     (async () => {
@@ -136,9 +139,17 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
             </Text>
           ) : null}
         </View>
-        <Pressable style={styles.logoutButton} onPress={onLogout}>
-          <Text style={styles.logoutText}>Logout</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            style={styles.addSpaceButton}
+            onPress={() => navigation.navigate("CreateSpace")}
+          >
+            <Text style={styles.addSpaceText}>Add space</Text>
+          </Pressable>
+          <Pressable style={styles.logoutButton} onPress={onLogout}>
+            <Text style={styles.logoutText}>Logout</Text>
+          </Pressable>
+        </View>
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -168,7 +179,8 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
         contentContainerStyle={locations.length === 0 ? styles.emptyList : undefined}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            No saved spaces yet. Create a space in the web app, then pull to refresh.
+            No saved spaces yet. Tap “Add space” above to create one here, or add spaces on the web
+            dashboard and pull to refresh.
           </Text>
         }
         renderItem={({ item }) => (
@@ -204,6 +216,14 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 16,
   },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  addSpaceButton: {
+    backgroundColor: "#D13B3B",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  addSpaceText: { fontWeight: "600", fontSize: 13, color: "#fff" },
   logoutButton: {
     backgroundColor: "#efefef",
     borderRadius: 8,

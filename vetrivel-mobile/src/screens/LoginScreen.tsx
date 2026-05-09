@@ -14,11 +14,14 @@ declare const process: {
 
 WebBrowser.maybeCompleteAuthSession();
 
+type AuthMode = "signin" | "signup";
+
 type Props = {
   onLoggedIn: (session: MobileAuthSession) => void;
 };
 
 export function LoginScreen({ onLoggedIn }: Props) {
+  const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -51,8 +54,36 @@ export function LoginScreen({ onLoggedIn }: Props) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Vetrivel Mobile</Text>
+
+      <View style={styles.modeRow}>
+        <Pressable
+          style={[styles.modeChip, authMode === "signin" && styles.modeChipActive]}
+          onPress={() => {
+            setAuthMode("signin");
+            setError(null);
+          }}
+        >
+          <Text style={[styles.modeChipText, authMode === "signin" && styles.modeChipTextActive]}>
+            Sign in
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.modeChip, authMode === "signup" && styles.modeChipActive]}
+          onPress={() => {
+            setAuthMode("signup");
+            setError(null);
+          }}
+        >
+          <Text style={[styles.modeChipText, authMode === "signup" && styles.modeChipTextActive]}>
+            Sign up
+          </Text>
+        </Pressable>
+      </View>
+
       <Text style={styles.subtitle}>
-        Sign in with Google to access your dashboard.
+        {authMode === "signin"
+          ? "Sign in with Google to open your saved spaces and nests."
+          : "Create your account with Google — we set up your profile the first time you continue."}
       </Text>
 
       {isExpoGo ? (
@@ -91,7 +122,9 @@ export function LoginScreen({ onLoggedIn }: Props) {
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Continue with Google</Text>
+          <Text style={styles.buttonText}>
+            {authMode === "signin" ? "Continue with Google" : "Sign up with Google"}
+          </Text>
         )}
       </Pressable>
 
@@ -117,6 +150,32 @@ const styles = StyleSheet.create({
     color: "#444",
     textAlign: "center",
     marginBottom: 8,
+    lineHeight: 22,
+  },
+  modeRow: {
+    flexDirection: "row",
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    marginBottom: 4,
+  },
+  modeChip: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
+  },
+  modeChipActive: {
+    backgroundColor: "#D13B3B",
+  },
+  modeChipText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#555",
+  },
+  modeChipTextActive: {
+    color: "#fff",
   },
   button: {
     width: "100%",

@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { isAxiosError } from "axios";
 import { Platform } from "react-native";
 import type { MobileAuthSession } from "./auth";
 import { normalizeLatLng, type LatLng } from "./lib/geo";
@@ -36,6 +36,16 @@ function authHeaders(accessToken: string) {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
+export function getApiErrorMessage(error: unknown): string {
+  if (isAxiosError(error)) {
+    const data = error.response?.data as { error?: string } | undefined;
+    if (data?.error && typeof data.error === "string") return data.error;
+    if (typeof error.message === "string" && error.message) return error.message;
+  }
+  if (error instanceof Error) return error.message;
+  return "Request failed";
+}
+
 export type UserLocation = {
   _id: string;
   name: string;
@@ -58,8 +68,12 @@ export type UserPlace = {
 export async function exchangeGoogleIdToken(
   idToken: string
 ): Promise<MobileAuthSession> {
-  const { data } = await api.post("/api/mobile/auth/google", { idToken });
-  return data as MobileAuthSession;
+  try {
+    const { data } = await api.post("/api/mobile/auth/google", { idToken });
+    return data as MobileAuthSession;
+  } catch (e) {
+    throw new Error(getApiErrorMessage(e));
+  }
 }
 
 function mapLocationRow(row: Record<string, unknown>): UserLocation | null {
@@ -73,6 +87,34 @@ function mapLocationRow(row: Record<string, unknown>): UserLocation | null {
     coordinates: coords,
     address: row.address != null ? String(row.address) : undefined,
   };
+}
+
+export type CreateLocationInput = {
+  name: string;
+  coordinates: LatLng;
+  address?: string;
+};
+
+/** Create a saved space (same contract as web `saveLocation`). */
+export async function createLocation(
+  accessToken: string,
+  input: CreateLocationInput
+): Promise<UserLocation> {
+  const { data } = await api.post(
+    "/api/locations",
+    {
+      name: input.name.trim(),
+      coordinates: input.coordinates,
+      address: input.address?.trim() ?? "",
+    },
+    { headers: authHeaders(accessToken) }
+  );
+  const row = data as Record<string, unknown>;
+  const loc = mapLocationRow(row);
+  if (!loc) {
+    throw new Error("Invalid location response from server");
+  }
+  return loc;
 }
 
 /** Saved spaces (maps / nests) for the signed-in user. */
