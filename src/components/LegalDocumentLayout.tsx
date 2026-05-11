@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 const docLinks = [
   { to: '/privacy', label: 'Privacy Policy' },
   { to: '/terms', label: 'Terms & Conditions' },
+  { to: '/child-safety', label: 'Child Safety' },
 ] as const;
 
 interface LegalDocumentLayoutProps {
@@ -31,6 +32,7 @@ export default function LegalDocumentLayout({ title, children }: LegalDocumentLa
     '[&_strong]:font-semibold [&_strong]:text-[#141414] dark:[&_strong]:text-white',
     '[&_p]:mb-0',
     '[&_a]:font-medium [&_a]:text-[#D13B3B] [&_a]:underline [&_a]:underline-offset-[3px] hover:[&_a]:text-[#b83232]',
+    '[&_h2]:font-display [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:tracking-tight [&_h2]:text-[#141414] dark:[&_h2]:text-white [&_h2]:mt-10 [&_h2]:mb-2',
     '[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2',
     isDark ? '[&_li]:marker:text-white/35' : '[&_li]:marker:text-[#D13B3B]/50',
     '[&_hr]:my-10 [&_hr]:border-0 [&_hr]:h-px [&_hr]:bg-black/10 dark:[&_hr]:bg-white/15'
