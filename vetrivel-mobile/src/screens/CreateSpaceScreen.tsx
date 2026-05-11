@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Location from "expo-location";
+import { Accuracy } from "expo-location";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -45,11 +46,32 @@ type Props = NavProps & {
   accessToken: string;
 };
 
+/** Google Maps on Android often ignores the first `animateToRegion`; `animateCamera` is reliable. */
+const ANDROID_CAMERA_ZOOM = 15;
+
+function runAndroidCameraMove(map: MapView, c: LatLng) {
+  const camera = {
+    center: { latitude: c.lat, longitude: c.lng },
+    heading: 0,
+    pitch: 0,
+    zoom: ANDROID_CAMERA_ZOOM,
+  };
+  const apply = () => {
+    map.animateCamera(camera, { duration: 500 });
+  };
+  apply();
+  requestAnimationFrame(apply);
+  setTimeout(apply, 160);
+}
+
 export function CreateSpaceScreen({ navigation, accessToken }: Props) {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [pinned, setPinned] = useState<LatLng | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const pinnedRef = useRef<LatLng | null>(null);
+  pinnedRef.current = pinned;
 
   const mapRef = useRef<MapView>(null);
   const mapReadyRef = useRef(false);
@@ -60,7 +82,13 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
 
   const flyTo = useCallback((c: LatLng) => {
     lastRegionCenterRef.current = c;
-    mapRef.current?.animateToRegion(buildRegion(c), 450);
+    const m = mapRef.current;
+    if (!m) return;
+    if (Platform.OS === "android") {
+      runAndroidCameraMove(m, c);
+    } else {
+      m.animateToRegion(buildRegion(c), 450);
+    }
   }, []);
 
   const applyPin = useCallback((c: LatLng) => {
@@ -115,9 +143,16 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
 
   const syncMapToBootTarget = useCallback(() => {
     if (!mapReadyRef.current) return;
-    mapRef.current?.animateToRegion(buildRegion(bootTargetRef.current), 450);
-  }, []);
+    if (pinnedRef.current) return;
+    const target = bootTargetRef.current;
+    if (Platform.OS === "android") {
+      requestAnimationFrame(() => flyTo(target));
+    } else {
+      flyTo(target);
+    }
+  }, [flyTo]);
 
+  /** One-shot bootstrap: do not re-run when callback identities change (avoids flying back to GPS default over a user-chosen map). */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -126,7 +161,9 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
       let target = FALLBACK_CENTER;
       if (status === "granted") {
         try {
-          const pos = await Location.getCurrentPositionAsync({});
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Accuracy.Balanced,
+          });
           target = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         } catch {
           /* keep fallback */
@@ -139,7 +176,8 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [syncMapToBootTarget]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: bootstrap once per screen mount
+  }, []);
 
   const goToMyLocation = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -151,11 +189,17 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
       return;
     }
     try {
-      const pos = await Location.getCurrentPositionAsync({});
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Accuracy.Balanced,
+      });
       const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       bootTargetRef.current = c;
-      applyPin(c);
       flyTo(c);
+      if (Platform.OS === "android") {
+        setTimeout(() => applyPin(c), 100);
+      } else {
+        applyPin(c);
+      }
     } catch {
       Alert.alert(
         "Could not read GPS",
@@ -218,7 +262,9 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
             poiClickEnabled={Platform.OS === "android" ? false : undefined}
             onMapReady={() => {
               mapReadyRef.current = true;
-              syncMapToBootTarget();
+              if (!pinnedRef.current) {
+                syncMapToBootTarget();
+              }
             }}
             onPress={onMapPress}
             onLongPress={onMapLongPress}

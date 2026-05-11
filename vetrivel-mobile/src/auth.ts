@@ -1,5 +1,9 @@
 import * as SecureStore from "expo-secure-store";
-import { exchangeGoogleIdToken } from "./api";
+import {
+  exchangeAppleIdentityToken,
+  exchangeGoogleIdToken,
+  type AppleSignInProfile,
+} from "./api";
 
 const SESSION_KEY = "vetrivel.mobile.session";
 
@@ -34,6 +38,15 @@ export async function clearAuthSession() {
 
 export async function loginWithGoogleIdToken(idToken: string) {
   const session = await exchangeGoogleIdToken(idToken);
+  await storeAuthSession(session);
+  return session;
+}
+
+export async function loginWithAppleIdentityToken(
+  identityToken: string,
+  profile?: AppleSignInProfile
+) {
+  const session = await exchangeAppleIdentityToken(identityToken, profile);
   await storeAuthSession(session);
   return session;
 }

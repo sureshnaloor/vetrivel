@@ -83,9 +83,14 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
     })();
   }, []);
 
+  /**
+   * Prefer saved spaces over raw GPS for the map center. Emulator (and some devices) report a
+   * default US fix (e.g. Mountain View) while the user’s spaces are elsewhere — centering on GPS
+   * first made the home map jump to the USA after creating a space.
+   */
   const mapCenter = useMemo(() => {
-    if (userPos) return userPos;
     if (locations.length > 0) return locations[0].coordinates;
+    if (userPos) return userPos;
     return FALLBACK_CENTER;
   }, [userPos, locations]);
 

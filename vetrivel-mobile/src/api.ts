@@ -76,6 +76,27 @@ export async function exchangeGoogleIdToken(
   }
 }
 
+export type AppleSignInProfile = {
+  givenName?: string;
+  familyName?: string;
+};
+
+export async function exchangeAppleIdentityToken(
+  identityToken: string,
+  profile?: AppleSignInProfile
+): Promise<MobileAuthSession> {
+  try {
+    const { data } = await api.post("/api/mobile/auth/apple", {
+      identityToken,
+      givenName: profile?.givenName,
+      familyName: profile?.familyName,
+    });
+    return data as MobileAuthSession;
+  } catch (e) {
+    throw new Error(getApiErrorMessage(e));
+  }
+}
+
 function mapLocationRow(row: Record<string, unknown>): UserLocation | null {
   const id = normalizeDocumentId(row._id);
   if (!id) return null;

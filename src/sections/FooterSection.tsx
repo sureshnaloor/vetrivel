@@ -65,7 +65,8 @@ const FooterSection = ({ className = '' }: FooterSectionProps) => {
     company: [
       { label: 'About', href: '#' },
       { label: 'Guidelines', href: '#' },
-      { label: 'Privacy', href: '#' },
+      { label: 'Terms & Conditions', href: '/terms' },
+      { label: 'Privacy Policy', href: '/privacy' },
       { label: 'Contact', href: '#' },
     ],
   };

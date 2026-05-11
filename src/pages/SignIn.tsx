@@ -118,11 +118,11 @@ export default function SignIn() {
           {/* Terms */}
           <p className={`mt-8 text-center text-xs leading-relaxed ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
             By signing in, you agree to our{' '}
-            <a href="#" className="text-[#E8724A] hover:text-[#F4A261] transition-colors underline underline-offset-2">
+            <a href="/terms" className="text-[#E8724A] hover:text-[#F4A261] transition-colors underline underline-offset-2">
               Terms of Service
             </a>{' '}
             and{' '}
-            <a href="#" className="text-[#E8724A] hover:text-[#F4A261] transition-colors underline underline-offset-2">
+            <a href="/privacy" className="text-[#E8724A] hover:text-[#F4A261] transition-colors underline underline-offset-2">
               Privacy Policy
             </a>
           </p>

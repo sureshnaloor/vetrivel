@@ -121,6 +121,7 @@ export default function DashboardFooter() {
               <ul className="space-y-3 text-sm">
                 <li><a href="/about" className={`${fgLink} transition-colors`}>About Us</a></li>
                 <li><a href="/guidelines" className={`${fgLink} transition-colors`}>Guidelines</a></li>
+                <li><a href="/terms" className={`${fgLink} transition-colors`}>Terms & Conditions</a></li>
                 <li><a href="/privacy" className={`${fgLink} transition-colors`}>Privacy Policy</a></li>
                 <li><a href="/contact" className={`${fgLink} transition-colors`}>Contact Support</a></li>
               </ul>

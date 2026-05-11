@@ -1,9 +1,21 @@
+import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
 import * as Google from "expo-auth-session/providers/google";
 import Constants, { ExecutionEnvironment } from "expo-constants";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
-import { loginWithGoogleIdToken, type MobileAuthSession } from "../auth";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import {
+  loginWithAppleIdentityToken,
+  loginWithGoogleIdToken,
+  type MobileAuthSession,
+} from "../auth";
 
 /** Expo Go uses `exp://…` redirects, which Google OAuth rejects; use a dev build (`expo run:android`). */
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
@@ -24,6 +36,7 @@ export function LoginScreen({ onLoggedIn }: Props) {
   const [authMode, setAuthMode] = useState<AuthMode>("signin");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
@@ -31,6 +44,11 @@ export function LoginScreen({ onLoggedIn }: Props) {
     androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
     scopes: ["openid", "profile", "email"],
   });
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    void AppleAuthentication.isAvailableAsync().then(setAppleAvailable);
+  }, []);
 
   useEffect(() => {
     if (response?.type !== "success") return;
@@ -50,6 +68,52 @@ export function LoginScreen({ onLoggedIn }: Props) {
       )
       .finally(() => setLoading(false));
   }, [response, onLoggedIn]);
+
+  const onApplePress = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        setError("Apple sign-in did not return an identity token.");
+        return;
+      }
+      const session = await loginWithAppleIdentityToken(credential.identityToken, {
+        givenName: credential.fullName?.givenName ?? undefined,
+        familyName: credential.fullName?.familyName ?? undefined,
+      });
+      onLoggedIn(session);
+    } catch (e: unknown) {
+      const code =
+        e && typeof e === "object" && "code" in e
+          ? String((e as { code?: string }).code)
+          : "";
+      if (code === "ERR_REQUEST_CANCELED" || code === "ERR_CANCELED") {
+        return;
+      }
+      const base =
+        e instanceof Error ? e.message : "Apple sign-in failed. Please retry.";
+      const looksLikeAppleSystemFailure =
+        /unknown reason|couldn\u2019t be completed|couldn't be completed|authorizationerror|error 1000/i.test(
+          base
+        ) || code === "ERR_REQUEST_FAILED";
+      setError(
+        looksLikeAppleSystemFailure
+          ? `${base}\n\nIf you are using the iOS Simulator: Sign in with Apple often fails here (AuthKit errors like 1000 / -7022) even when the app is set up correctly. Open the Simulator’s Settings → Apple ID, sign in to iCloud, then retry — or test on a physical iPhone with: npx expo run:ios --device`
+          : base
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [onLoggedIn]);
+
+  const googleDisabled = !request || loading || isExpoGo;
+  const appleDisabled = loading || !appleAvailable || isExpoGo;
 
   return (
     <View style={styles.container}>
@@ -82,21 +146,20 @@ export function LoginScreen({ onLoggedIn }: Props) {
 
       <Text style={styles.subtitle}>
         {authMode === "signin"
-          ? "Sign in with Google to open your saved spaces and nests."
-          : "Create your account with Google — we set up your profile the first time you continue."}
+          ? Platform.OS === "ios"
+            ? "Sign in with Apple or Google to open your saved spaces and nests."
+            : "Sign in with Google to open your saved spaces and nests."
+          : Platform.OS === "ios"
+            ? "Create your account with Apple or Google — we set up your profile the first time you continue."
+            : "Create your account with Google — we set up your profile the first time you continue."}
       </Text>
 
       {isExpoGo ? (
         <Text style={styles.expoGoWarning}>
-          Google sign-in does not work inside the Expo Go app (Google blocks the{" "}
-          <Text style={styles.mono}>exp://</Text> redirect). From{" "}
+          Google and Apple sign-in need a development build (not Expo Go). From{" "}
           <Text style={styles.mono}>vetrivel-mobile</Text>, run{" "}
-          <Text style={styles.mono}>npx expo run:android</Text> (or{" "}
-          <Text style={styles.mono}>npm run android</Text>) to install a development build on
-          this emulator, then open that app and sign in. In Google Cloud Console, create an
-          Android OAuth client for package <Text style={styles.mono}>com.optaimyze.vetrivel</Text>{" "}
-          with your debug keystore SHA-1, and set{" "}
-          <Text style={styles.mono}>EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID</Text> to that client ID.
+          <Text style={styles.mono}>npx expo run:ios</Text> or{" "}
+          <Text style={styles.mono}>npx expo run:android</Text>, then sign in from that app.
         </Text>
       ) : null}
 
@@ -111,12 +174,28 @@ export function LoginScreen({ onLoggedIn }: Props) {
         </Text>
       ) : null}
 
+      {!isExpoGo && Platform.OS === "ios" && appleAvailable ? (
+        <View
+          style={[styles.appleWrap, appleDisabled && styles.buttonDisabled]}
+          pointerEvents={appleDisabled ? "none" : "auto"}
+        >
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={
+              authMode === "signup"
+                ? AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                : AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+            }
+            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+            cornerRadius={10}
+            style={styles.appleButton}
+            onPress={() => void onApplePress()}
+          />
+        </View>
+      ) : null}
+
       <Pressable
-        style={[
-          styles.button,
-          (!request || loading || isExpoGo) && styles.buttonDisabled,
-        ]}
-        disabled={!request || loading || isExpoGo}
+        style={[styles.button, googleDisabled && styles.buttonDisabled]}
+        disabled={googleDisabled}
         onPress={() => promptAsync()}
       >
         {loading ? (
@@ -177,6 +256,15 @@ const styles = StyleSheet.create({
   modeChipTextActive: {
     color: "#fff",
   },
+  appleWrap: {
+    width: "100%",
+    maxWidth: 320,
+    height: 48,
+  },
+  appleButton: {
+    width: "100%",
+    height: 48,
+  },
   button: {
     width: "100%",
     maxWidth: 320,
@@ -186,7 +274,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.55,
   },
   buttonText: {
     color: "#fff",

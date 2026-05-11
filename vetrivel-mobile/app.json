@@ -3,7 +3,7 @@
     "name": "vetrivel-mobile",
     "slug": "vetrivel",
     "scheme": "vetrivel",
-    "version": "1.0.0",
+    "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.optaimyze.vetrivel",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Allow Vetrivel to attach community photos for temples."
       }
@@ -51,6 +52,7 @@
     "plugins": [
       "expo-web-browser",
       "expo-secure-store",
+      "expo-apple-authentication",
       [
         "expo-image-picker",
         {

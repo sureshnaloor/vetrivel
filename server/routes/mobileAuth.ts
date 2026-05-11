@@ -7,7 +7,13 @@ const googleJwks = createRemoteJWKSet(
   new URL("https://www.googleapis.com/oauth2/v3/certs")
 );
 
+const appleJwks = createRemoteJWKSet(
+  new URL("https://appleid.apple.com/auth/keys")
+);
+
 const googleIssuers = ["https://accounts.google.com", "accounts.google.com"];
+
+const APPLE_ISSUER = "https://appleid.apple.com";
 
 function getAllowedGoogleAudiences(): string[] {
   const fromList = (process.env.GOOGLE_MOBILE_CLIENT_IDS || "")
@@ -37,6 +43,31 @@ async function verifyGoogleIdToken(idToken: string, allowedClientIds: string[]) 
   const tokenAuds = tokenAudiences(payload);
   if (!tokenAuds.some((a) => allowedClientIds.includes(a))) {
     throw new Error("Google ID token audience is not allowed for this app");
+  }
+  return payload;
+}
+
+/** Native iOS `aud` is the app bundle ID (e.g. com.optaimyze.vetrivel). */
+function getAppleAudiences(): string[] {
+  const fromList = (process.env.APPLE_MOBILE_BUNDLE_IDS || "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const primary =
+    process.env.APPLE_IOS_BUNDLE_ID?.trim() || "com.optaimyze.vetrivel";
+  return [...new Set([...fromList, primary])];
+}
+
+async function verifyAppleIdentityToken(
+  identityToken: string,
+  allowedAudiences: string[]
+) {
+  const { payload } = await jwtVerify(identityToken, appleJwks, {
+    issuer: APPLE_ISSUER,
+  });
+  const tokenAuds = tokenAudiences(payload);
+  if (!tokenAuds.some((a) => allowedAudiences.includes(a))) {
+    throw new Error("Apple identity token audience is not allowed for this app");
   }
   return payload;
 }
@@ -181,5 +212,139 @@ mobileAuthRouter.post("/google", async (req, res) => {
   } catch (error) {
     console.error("Mobile Google auth failed:", error);
     res.status(401).json({ error: "Google authentication failed" });
+  }
+});
+
+mobileAuthRouter.post("/apple", async (req, res) => {
+  try {
+    const { identityToken, givenName, familyName } = req.body ?? {};
+    if (!identityToken || typeof identityToken !== "string") {
+      return res.status(400).json({ error: "identityToken is required" });
+    }
+
+    const audiences = getAppleAudiences();
+    if (audiences.length === 0) {
+      return res.status(500).json({
+        error:
+          'Apple Sign In is not configured. Set APPLE_IOS_BUNDLE_ID (defaults to "com.optaimyze.vetrivel") or APPLE_MOBILE_BUNDLE_IDS.',
+      });
+    }
+
+    const payload = await verifyAppleIdentityToken(identityToken, audiences);
+
+    const appleSub =
+      typeof payload.sub === "string" ? payload.sub : undefined;
+    const email =
+      typeof payload.email === "string" ? payload.email : undefined;
+    const gn = typeof givenName === "string" ? givenName.trim() : "";
+    const fn = typeof familyName === "string" ? familyName.trim() : "";
+    const nameFromClient = [gn, fn].filter(Boolean).join(" ").trim();
+    const name =
+      nameFromClient ||
+      (typeof payload.name === "string" ? payload.name : null) ||
+      null;
+    const emailVerifiedRaw = payload.email_verified;
+    const emailVerified =
+      emailVerifiedRaw === true ||
+      emailVerifiedRaw === "true" ||
+      emailVerifiedRaw === "True"
+        ? new Date()
+        : null;
+
+    if (!appleSub) {
+      return res.status(401).json({ error: "Invalid Apple token payload" });
+    }
+
+    const client = await clientPromise;
+    const db = client.db();
+    const users = db.collection("users");
+    const accounts = db.collection("accounts");
+
+    const existingAccount = await accounts.findOne({
+      provider: "apple",
+      providerAccountId: appleSub,
+    });
+
+    let userDoc:
+      | { _id: ObjectId; email: string; name?: string; image?: string }
+      | null = null;
+
+    if (existingAccount?.userId) {
+      const userId =
+        existingAccount.userId instanceof ObjectId
+          ? existingAccount.userId
+          : new ObjectId(String(existingAccount.userId));
+      userDoc = (await users.findOne({
+        _id: userId,
+      })) as typeof userDoc;
+    }
+
+    if (!userDoc) {
+      if (!email) {
+        return res.status(401).json({
+          error:
+            "Apple did not include an email in this token. Sign in with the same Apple ID you used originally, or use Google on this device.",
+        });
+      }
+
+      const existingUserByEmail = (await users.findOne({
+        email,
+      })) as typeof userDoc;
+
+      if (existingUserByEmail) {
+        userDoc = existingUserByEmail;
+      } else {
+        const now = new Date();
+        const created = await users.insertOne({
+          name,
+          email,
+          image: null,
+          emailVerified,
+          createdAt: now,
+          updatedAt: now,
+        });
+        userDoc = {
+          _id: created.insertedId,
+          email,
+          name: name || undefined,
+          image: undefined,
+        };
+      }
+    }
+
+    const linkedAccount = await accounts.findOne({
+      provider: "apple",
+      providerAccountId: appleSub,
+    });
+
+    if (!linkedAccount) {
+      await accounts.insertOne({
+        userId: userDoc._id,
+        type: "oauth",
+        provider: "apple",
+        providerAccountId: appleSub,
+      });
+    }
+
+    const accessToken = await issueMobileAccessToken({
+      id: userDoc._id.toHexString(),
+      email: userDoc.email,
+      name: userDoc.name || null,
+    });
+
+    res.json({
+      accessToken,
+      tokenType: "Bearer",
+      expiresIn: 60 * 60 * 24 * 7,
+      user: {
+        id: userDoc._id.toHexString(),
+        email: userDoc.email,
+        name: userDoc.name || null,
+        image: userDoc.image ?? null,
+      },
+    });
+  } catch (error) {
+    console.error("Mobile Apple auth failed:", error);
+    res.status(401).json({ error: "Apple authentication failed" });
   }
 });

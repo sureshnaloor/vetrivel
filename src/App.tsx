@@ -4,6 +4,8 @@ import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import SignIn from './pages/SignIn';
 import SignOut from './pages/SignOut';
+import PrivacyPolicy from './pages/privacy-policy';
+import TermsConditions from './pages/terms-conditions';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ExploreMap from './pages/ExploreMap';
 import { LocationProvider } from './contexts/LocationContext';
@@ -18,7 +20,9 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signout" element={<SignOut />} />
-          
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/terms" element={<TermsConditions />} />
+
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={
