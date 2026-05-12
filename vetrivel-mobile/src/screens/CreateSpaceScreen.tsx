@@ -242,7 +242,7 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.flex} collapsable={false}>
@@ -372,16 +372,24 @@ export function CreateSpaceScreen({ navigation, accessToken }: Props) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  screen: { flex: 1, backgroundColor: "#F6F3ED" },
   mapShell: {
     flex: 1,
     minHeight: 280,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e8e8e8",
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#e8e8e8",
+    borderRadius: 16,
+    backgroundColor: "#fff",
     overflow: Platform.OS === "android" ? "visible" : "hidden",
     elevation: Platform.OS === "android" ? 2 : 0,
     zIndex: 1,
   },
-  map: { ...StyleSheet.absoluteFillObject },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: Platform.OS === "ios" ? 16 : 0,
+  },
   hintOverlay: {
     position: "absolute",
     left: 12,

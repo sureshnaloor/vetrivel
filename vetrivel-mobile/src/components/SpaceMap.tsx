@@ -143,14 +143,15 @@ const styles = StyleSheet.create({
   // iOS can safely clip for rounded corners.
   wrap: {
     width: "100%",
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#e8e8e8",
+    backgroundColor: "#fff",
     marginBottom: 12,
     overflow: Platform.OS === "android" ? "visible" : "hidden",
   },
   map: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: Platform.OS === "ios" ? 12 : 0,
+    borderRadius: Platform.OS === "ios" ? 16 : 0,
   },
 });

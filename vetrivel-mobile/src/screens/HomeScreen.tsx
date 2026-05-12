@@ -181,7 +181,10 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
             <Text style={styles.sectionTitle}>My spaces ({locations.length})</Text>
           </View>
         }
-        contentContainerStyle={locations.length === 0 ? styles.emptyList : undefined}
+        contentContainerStyle={[
+          styles.listContent,
+          locations.length === 0 && styles.emptyList,
+        ]}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
             No saved spaces yet. Tap “Add space” above to create one here, or add spaces on the web
@@ -204,13 +207,14 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 8 },
+  container: { flex: 1, paddingTop: 8, backgroundColor: "#F6F3ED" },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
     marginBottom: 12,
+    paddingHorizontal: 16,
     gap: 8,
   },
   headerText: { flex: 1 },
@@ -239,7 +243,9 @@ const styles = StyleSheet.create({
   error: {
     color: "#b00020",
     marginBottom: 8,
+    marginHorizontal: 16,
   },
+  listContent: { paddingHorizontal: 16, paddingBottom: 24 },
   listHeader: { marginBottom: 8 },
   mapCaption: {
     fontSize: 13,
@@ -258,7 +264,7 @@ const styles = StyleSheet.create({
   card: {
     borderWidth: 1,
     borderColor: "#e8e8e8",
-    borderRadius: 10,
+    borderRadius: 14,
     padding: 14,
     marginBottom: 10,
     backgroundColor: "#fff",

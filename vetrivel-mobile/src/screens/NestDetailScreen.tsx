@@ -575,8 +575,12 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 40 },
+  scroll: { flex: 1, backgroundColor: "#F6F3ED" },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 40,
+  },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   spaceAddress: {
     fontSize: 14,
@@ -607,7 +611,7 @@ const styles = StyleSheet.create({
   placeCard: {
     borderWidth: 1,
     borderColor: "#e8e8e8",
-    borderRadius: 10,
+    borderRadius: 14,
     padding: 12,
     marginTop: 8,
     backgroundColor: "#fff",
@@ -639,7 +643,7 @@ const styles = StyleSheet.create({
   nearbyCard: {
     borderWidth: 1,
     borderColor: "#e8e8e8",
-    borderRadius: 10,
+    borderRadius: 14,
     padding: 12,
     marginTop: 10,
     backgroundColor: "#fff",

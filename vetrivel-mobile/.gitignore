@@ -37,6 +37,10 @@ yarn-error.*
 # Google Cloud / Play Console service account JSON (private keys — never commit)
 vetrivel-*-*.json
 
+# EAS local credentials export (keystores and signing passwords)
+credentials.json
+credentials/
+
 # typescript
 *.tsbuildinfo
 

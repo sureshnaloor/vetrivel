@@ -338,7 +338,17 @@ export function TempleDetailModal({
     >
       <View style={styles.shell}>
         <View style={styles.headerBar}>
-          <Pressable onPress={onClose} hitSlop={12}>
+          <Pressable
+            onPress={onClose}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.closeButton,
+              pressed && styles.closeButtonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Close temple details"
+          >
+            <Text style={styles.closeIcon}>×</Text>
             <Text style={styles.closeText}>Close</Text>
           </Pressable>
         </View>
@@ -754,22 +764,46 @@ export function TempleDetailModal({
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: "#fff" },
+  shell: { flex: 1, backgroundColor: "#F6F3ED" },
   headerBar: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    paddingTop: 10,
+    paddingBottom: 8,
+    backgroundColor: "#F6F3ED",
   },
-  closeText: { fontSize: 16, color: ACCENT, fontWeight: "600" },
+  closeButton: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    borderWidth: 1,
+    borderColor: "rgba(209,59,59,0.22)",
+    backgroundColor: "#fff",
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  closeButtonPressed: { opacity: 0.75 },
+  closeIcon: {
+    color: ACCENT,
+    fontSize: 18,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  closeText: { fontSize: 12, color: ACCENT, fontWeight: "700" },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 40 },
   hero: {
     paddingHorizontal: 20,
-    paddingTop: 8,
+    paddingTop: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    marginHorizontal: 14,
+    marginTop: 4,
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
   },
   heroLoading: { flexDirection: "row", alignItems: "center", gap: 10 },
   title: {
@@ -787,6 +821,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: "#eee",
+    marginHorizontal: 14,
+    backgroundColor: "#fff",
   },
   tabBtn: {
     flex: 1,
@@ -798,7 +834,14 @@ const styles = StyleSheet.create({
   tabBtnOn: { borderBottomColor: ACCENT },
   tabLabel: { fontSize: 11, fontWeight: "600", color: "#6E6A63" },
   tabLabelOn: { color: ACCENT },
-  panel: { padding: 20 },
+  panel: {
+    padding: 20,
+    marginHorizontal: 14,
+    marginBottom: 18,
+    backgroundColor: "#fff",
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
+  },
   sectionHeading: {
     fontSize: 15,
     fontWeight: "700",
