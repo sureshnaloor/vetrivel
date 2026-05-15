@@ -8,6 +8,7 @@ import { customTemplesRouter } from "./routes/customTemples";
 import { locationsRouter } from "./routes/locations";
 import { templeContentRouter } from "./routes/templeContent";
 import { mobileAuthRouter } from "./routes/mobileAuth";
+import { friendsRouter } from "./routes/friends";
 
 dotenv.config();
 
@@ -44,6 +45,9 @@ app.use("/api/custom-temples", customTemplesRouter);
 
 // Temple Community Content (UGC) route
 app.use("/api/temple-content", templeContentRouter);
+
+// Friends & Social
+app.use("/api/friends", friendsRouter);
 
 // A test endpoint
 app.get("/api/hello", (req, res) => {

@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Navigation from '../components/Navigation';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
-import { Plus, Maximize, Bell } from 'lucide-react';
+import { useFriends } from '../contexts/FriendsContext';
+import { Plus, Maximize, Bell, CheckCircle2, XCircle } from 'lucide-react';
 
 import LeftRail from '../components/dashboard/LeftRail';
 import CenterColumn from '../components/dashboard/CenterColumn';
@@ -14,8 +17,31 @@ import { SelectedTempleProvider } from '../contexts/SelectedTempleContext';
 export default function Dashboard() {
   const { session } = useAuth();
   const { theme } = useTheme();
+  const { acceptInvite } = useFriends();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [inviteToast, setInviteToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   
   const isDark = theme === 'dark';
+
+  // Auto-accept invite link from URL
+  useEffect(() => {
+    const inviteToken = searchParams.get('invite');
+    if (!inviteToken || !session?.user) return;
+
+    // Remove the param from URL immediately to prevent re-processing
+    searchParams.delete('invite');
+    setSearchParams(searchParams, { replace: true });
+
+    acceptInvite(inviteToken)
+      .then((msg) => {
+        setInviteToast({ type: 'success', message: msg || 'You are now friends!' });
+        setTimeout(() => setInviteToast(null), 5000);
+      })
+      .catch((e: any) => {
+        setInviteToast({ type: 'error', message: e.message || 'Failed to accept invite' });
+        setTimeout(() => setInviteToast(null), 5000);
+      });
+  }, [searchParams, session]);
 
   return (
     <DashboardPinnedProvider>
@@ -27,6 +53,18 @@ export default function Dashboard() {
         To maintain the full screen "app" feel, Dashboard gets its own tight padding top.
       */}
       <Navigation />
+
+      {/* Invite Toast */}
+      {inviteToast && (
+        <div className={`fixed top-20 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 px-5 py-3 rounded-xl shadow-lg text-sm font-medium transition-all animate-[fadeIn_0.3s_ease-out] ${
+          inviteToast.type === 'success'
+            ? (isDark ? 'bg-green-900/90 text-green-200 border border-green-700/50' : 'bg-green-50 text-green-800 border border-green-200')
+            : (isDark ? 'bg-red-900/90 text-red-200 border border-red-700/50' : 'bg-red-50 text-red-800 border border-red-200')
+        }`}>
+          {inviteToast.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+          {inviteToast.message}
+        </div>
+      )}
 
       <main className="max-w-[1600px] mx-auto pt-24 pb-12 px-4 sm:px-6 lg:px-8 min-h-screen flex flex-col">
         

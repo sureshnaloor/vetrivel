@@ -10,6 +10,7 @@ import ChildSafety from './pages/child-safety';
 import PlaceholderPage from './pages/PlaceholderPage';
 import ExploreMap from './pages/ExploreMap';
 import { LocationProvider } from './contexts/LocationContext';
+import { FriendsProvider } from './contexts/FriendsContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
@@ -29,7 +30,9 @@ function App() {
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={
               <LocationProvider>
-                <Dashboard />
+                <FriendsProvider>
+                  <Dashboard />
+                </FriendsProvider>
               </LocationProvider>
             } />
             <Route path="/map" element={

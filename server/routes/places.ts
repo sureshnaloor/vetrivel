@@ -205,7 +205,7 @@ placesRouter.get("/details", async (req, res) => {
 });
 
 // GET /api/places
-// Fetch all saved places for the authenticated user
+// Fetch all saved places for the authenticated user (or a friend's nest if authorized)
 placesRouter.get("/", async (req, res) => {
   try {
     const user = (req as any).user;
@@ -213,15 +213,43 @@ placesRouter.get("/", async (req, res) => {
     const client = await clientPromise;
     const db = client.db();
     
-    const query: any = { userEmail: user.email };
+    // Default: find user's own places
+    let query: any = { userEmail: user.email };
+
     if (locationId) {
-      query.locationId = locationId;
+      // Check who owns this location
+      const loc = await db.collection("user_locations").findOne({ _id: new ObjectId(locationId as string) });
+      
+      if (loc) {
+        if (loc.userEmail === user.email) {
+          // It's the user's own location
+          query = { locationId, userEmail: user.email };
+        } else {
+          // It's someone else's location. Check if they are friends.
+          const friendRequest = await db.collection("friend_requests").findOne({
+            status: "accepted",
+            $or: [
+              { fromEmail: user.email, toEmail: loc.userEmail },
+              { fromEmail: loc.userEmail, toEmail: user.email }
+            ]
+          });
+
+          if (friendRequest) {
+            // They are friends! Return the friend's places for this location.
+            query = { locationId, userEmail: loc.userEmail };
+          } else {
+            return res.status(403).json({ error: "Unauthorized to view this nest" });
+          }
+        }
+      } else {
+        return res.status(404).json({ error: "Location not found" });
+      }
     } else {
-      query.locationId = { $in: [null, ""] };
+      // Fetch user's root places (no locationId)
+      query = { userEmail: user.email, locationId: { $in: [null, ""] } };
     }
     
     const places = await db.collection("user_places").find(query).toArray();
-    
     res.json(places);
   } catch (error) {
     console.error("Error fetching places:", error);

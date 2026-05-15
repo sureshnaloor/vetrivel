@@ -3,8 +3,9 @@ import { useTheme } from '../../hooks/useTheme';
 import { useLocation } from '../../contexts/LocationContext';
 import { useDashboardPinned } from '../../contexts/DashboardPinnedContext';
 import { useSelectedTemple } from '../../contexts/SelectedTempleContext';
+import { useFriends } from '../../contexts/FriendsContext';
 import { findSpaceContainingPoint, getSpaceMatchDistanceKm, normalizeDocumentId, normalizeLatLng, getDistanceKm } from '../../lib/geo';
-import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2, X, AlertCircle } from 'lucide-react';
+import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2, X, AlertCircle, Map } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { GoogleMap, OverlayView } from '@react-google-maps/api';
@@ -100,6 +101,7 @@ export default function CenterColumn() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { coordinates, isLoaded, type: locType, address, savedLocations, activeLocationId, refreshLocations, selectLocation, setLocation } = useLocation();
+  const { friendNests } = useFriends();
   const { pinToAssign, setPinToAssign, refreshPinnedList } = useDashboardPinned();
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const pinToAssignRef = useRef(pinToAssign);
@@ -141,6 +143,10 @@ export default function CenterColumn() {
     distance: number;
     coords: { lat: number, lng: number };
   } | null>(null);
+
+  // Detect if we are in a friend's nest
+  const activeFriendNest = friendNests.find(n => normalizeDocumentId(n._id) === normalizeDocumentId(activeLocationId));
+  const isFriendNest = !!activeFriendNest;
 
   // CSS for Marker Animations
   const markerAnimationStyles = `
@@ -748,21 +754,40 @@ export default function CenterColumn() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={(e) => { e.stopPropagation(); handleSaveSuggestedPlace(temple, 'nest'); }}
-                          aria-label="Add to Nest"
-                          title="Add to Nest"
-                          className={`w-6 h-6 rounded-md border transition-colors flex items-center justify-center ${isDark ? 'bg-[#0D9488]/10 border-[#0D9488]/30 text-[#2DD4BF] hover:bg-[#0D9488]/20' : 'bg-[#0D9488]/5 border-[#0D9488]/20 text-[#0D9488] hover:bg-[#0D9488]/10'}`}
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            const lat = temple.geometry?.location?.lat();
+                            const lng = temple.geometry?.location?.lng();
+                            if (lat && lng) {
+                              window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank', 'noopener');
+                            }
+                          }}
+                          aria-label="Get Directions"
+                          title="Get Directions"
+                          className={`w-6 h-6 rounded-md border transition-colors flex items-center justify-center ${isDark ? 'bg-indigo-400/10 border-indigo-400/30 text-indigo-300 hover:bg-indigo-400/20' : 'bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100'}`}
                         >
-                          <House className="w-3.5 h-3.5" />
+                          <Map className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleSaveSuggestedPlace(temple, 'interest'); }}
-                          aria-label="Add as Interest"
-                          title="Add as Interest"
-                          className={`w-6 h-6 rounded-md border transition-colors flex items-center justify-center ${isDark ? 'bg-blue-400/10 border-blue-400/30 text-blue-300 hover:bg-blue-400/20' : 'bg-blue-50 border-blue-200 text-blue-600 hover:bg-blue-100'}`}
-                        >
-                          <Sparkles className="w-3.5 h-3.5" />
-                        </button>
+                        {!isFriendNest && (
+                          <>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleSaveSuggestedPlace(temple, 'nest'); }}
+                              aria-label="Add to Nest"
+                              title="Add to Nest"
+                              className={`w-6 h-6 rounded-md border transition-colors flex items-center justify-center ${isDark ? 'bg-[#0D9488]/10 border-[#0D9488]/30 text-[#2DD4BF] hover:bg-[#0D9488]/20' : 'bg-[#0D9488]/5 border-[#0D9488]/20 text-[#0D9488] hover:bg-[#0D9488]/10'}`}
+                            >
+                              <House className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleSaveSuggestedPlace(temple, 'interest'); }}
+                              aria-label="Add as Interest"
+                              title="Add as Interest"
+                              className={`w-6 h-6 rounded-md border transition-colors flex items-center justify-center ${isDark ? 'bg-blue-400/10 border-blue-400/30 text-blue-300 hover:bg-blue-400/20' : 'bg-blue-50 border-blue-200 text-blue-600 hover:bg-blue-100'}`}
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -861,22 +886,24 @@ export default function CenterColumn() {
                     <X className="w-4 h-4" />
                   </button>
                 </div>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <button
-                    type="button"
-                    onClick={() => handlePinnedAssign('nest')}
-                    className={`flex-1 min-w-[120px] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 ${isDark ? 'bg-[#0D9488]/20 border border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/30' : 'bg-[#0D9488]/10 border border-[#0D9488]/25 text-[#0D9488] hover:bg-[#0D9488]/15'}`}
-                  >
-                    <House className="w-3.5 h-3.5" /> Add to Nest
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handlePinnedAssign('interest')}
-                    className={`flex-1 min-w-[120px] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 ${isDark ? 'bg-blue-500/15 border border-blue-400/30 text-blue-300 hover:bg-blue-500/25' : 'bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100'}`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" /> Temple of Interest
-                  </button>
-                </div>
+                {!isFriendNest && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => handlePinnedAssign('nest')}
+                      className={`flex-1 min-w-[120px] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 ${isDark ? 'bg-[#0D9488]/20 border border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/30' : 'bg-[#0D9488]/10 border border-[#0D9488]/25 text-[#0D9488] hover:bg-[#0D9488]/15'}`}
+                    >
+                      <House className="w-3.5 h-3.5" /> Add to Nest
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePinnedAssign('interest')}
+                      className={`flex-1 min-w-[120px] py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 ${isDark ? 'bg-blue-500/15 border border-blue-400/30 text-blue-300 hover:bg-blue-500/25' : 'bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100'}`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" /> Temple of Interest
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             <GoogleMap
@@ -1071,7 +1098,7 @@ export default function CenterColumn() {
                 {contextMenu.isEmptyCoordinate ? 'Unknown Mapping' : 'Save Location'}
               </div>
               
-              {!contextMenu.isEmptyCoordinate && (
+              {!contextMenu.isEmptyCoordinate && !isFriendNest && (
                 <>
                   <button 
                     className={`w-full text-left px-3 py-2 rounded-lg transition-colors font-medium flex items-center gap-2 ${isDark ? 'hover:bg-white/10 text-[#f97316]' : 'hover:bg-black/5 text-[#f97316]'}`} 
@@ -1176,11 +1203,18 @@ export default function CenterColumn() {
       {/* Active Nest Grid */}
       <div className="flex items-center justify-between mt-2">
         <div className="flex items-center gap-3">
-          <h2 className="font-display text-xl font-semibold">Active Nest</h2>
-          {activeLocationId && (
+          <h2 className="font-display text-xl font-semibold">
+            {isFriendNest ? `${activeFriendNest.ownerName}'s Nest` : 'Active Nest'}
+          </h2>
+          {(activeLocationId || isFriendNest) && (
              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${isDark ? 'bg-[#0D9488]/20 text-[#2DD4BF]' : 'bg-[#0D9488]/10 text-[#0D9488]'}`}>
-               {savedLocations.find(l => l._id === activeLocationId)?.name || 'Sacred Space'}
+               {activeFriendNest?.name || savedLocations.find(l => normalizeDocumentId(l._id) === normalizeDocumentId(activeLocationId))?.name || 'Sacred Space'}
              </span>
+          )}
+          {isFriendNest && (
+            <span className={`text-[9px] px-2 py-0.5 rounded uppercase font-bold tracking-tighter ${isDark ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-100 text-indigo-700'}`}>
+              Shared
+            </span>
           )}
         </div>
         <button className={`text-sm hover:underline ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>View Map</button>
@@ -1205,21 +1239,38 @@ export default function CenterColumn() {
                   )}
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleMovePlaceCategory(place, 'interest'); }}
-                      aria-label="Move to Temple of Interest"
-                      title="Move to Temple of Interest"
-                      className={`w-8 h-8 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-blue-400/30 text-blue-300 hover:bg-blue-400/15' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        if (place.coordinates?.lat && place.coordinates?.lng) {
+                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${place.coordinates.lat},${place.coordinates.lng}`, '_blank', 'noopener');
+                        }
+                      }}
+                      aria-label="Get Directions"
+                      title="Get Directions"
+                      className={`w-8 h-8 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-indigo-400/30 text-indigo-300 hover:bg-indigo-400/15' : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'}`}
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <Map className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleRemovePlace(place); }}
-                      aria-label="Remove from Nest"
-                      title="Remove from Nest"
-                      className={`w-8 h-8 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-red-400/30 text-red-300 hover:bg-red-400/15' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {!isFriendNest && (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleMovePlaceCategory(place, 'interest'); }}
+                          aria-label="Move to Temple of Interest"
+                          title="Move to Temple of Interest"
+                          className={`w-8 h-8 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-blue-400/30 text-blue-300 hover:bg-blue-400/15' : 'border-blue-200 text-blue-600 hover:bg-blue-50'}`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRemovePlace(place); }}
+                          aria-label="Remove from Nest"
+                          title="Remove from Nest"
+                          className={`w-8 h-8 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-red-400/30 text-red-300 hover:bg-red-400/15' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <h3 className="font-semibold text-lg leading-tight line-clamp-2">{place.name}</h3>
@@ -1256,21 +1307,38 @@ export default function CenterColumn() {
                   <span className={`text-[10px] uppercase tracking-wider font-medium text-blue-500`}>Intrigued</span>
                   <div className="flex items-center gap-1">
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleMovePlaceCategory(place, 'nest'); }}
-                      aria-label="Move to Nest"
-                      title="Move to Nest"
-                      className={`w-7 h-7 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/15' : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/10'}`}
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        if (place.coordinates?.lat && place.coordinates?.lng) {
+                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${place.coordinates.lat},${place.coordinates.lng}`, '_blank', 'noopener');
+                        }
+                      }}
+                      aria-label="Get Directions"
+                      title="Get Directions"
+                      className={`w-7 h-7 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-indigo-400/30 text-indigo-300 hover:bg-indigo-400/15' : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'}`}
                     >
-                      <House className="w-3.5 h-3.5" />
+                      <Map className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleRemovePlace(place); }}
-                      aria-label="Remove from Temple of Interest"
-                      title="Remove from Temple of Interest"
-                      className={`w-7 h-7 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-red-400/30 text-red-300 hover:bg-red-400/15' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {!isFriendNest && (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleMovePlaceCategory(place, 'nest'); }}
+                          aria-label="Move to Nest"
+                          title="Move to Nest"
+                          className={`w-7 h-7 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/15' : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/10'}`}
+                        >
+                          <House className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRemovePlace(place); }}
+                          aria-label="Remove from Temple of Interest"
+                          title="Remove from Temple of Interest"
+                          className={`w-7 h-7 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-red-400/30 text-red-300 hover:bg-red-400/15' : 'border-red-200 text-red-600 hover:bg-red-50'}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

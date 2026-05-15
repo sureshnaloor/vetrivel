@@ -3,7 +3,7 @@ import { useSelectedTemple } from '../../contexts/SelectedTempleContext';
 import { useLocation } from '../../contexts/LocationContext';
 import { useAuth } from '../../hooks/useAuth';
 import { fetchTempleContent, createTempleContent, deleteTempleContent, getTempleKey, type TempleContent } from '../../services/templeContent';
-import { MapPin, Info, Clock, Image as ImageIcon, MessageSquare, ExternalLink, Loader2, Trash2, Plus } from 'lucide-react';
+import { MapPin, Info, Clock, Image as ImageIcon, MessageSquare, ExternalLink, Loader2, Trash2, Plus, Navigation as NavIcon, Car, Footprints, Plane, TrainFront } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 
 interface PlaceDetails {
@@ -25,9 +25,17 @@ export default function RightRail() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { selectedTemple } = useSelectedTemple();
-  const { isLoaded } = useLocation();
+  const { isLoaded, coordinates, deviceCoordinates } = useLocation();
   const { session } = useAuth();
-  const [activeTab, setActiveTab] = useState<'info' | 'pooja' | 'media' | 'qa'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'pooja' | 'media' | 'qa' | 'routes'>('info');
+  const [routeData, setRouteData] = useState<{
+    driving?: { dist: string, time: string },
+    transit?: { dist: string, time: string },
+    walking?: { dist: string, time: string },
+    air?: { dist: string, time: string },
+    loading?: boolean,
+    error?: string
+  }>({});
   const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -47,6 +55,7 @@ export default function RightRail() {
     { id: 'pooja', label: 'Pooja', icon: Clock },
     { id: 'media', label: 'Media', icon: ImageIcon },
     { id: 'qa', label: 'Q&A', icon: MessageSquare },
+    { id: 'routes', label: 'Routes', icon: NavIcon },
   ] as const;
 
   const templeKey = selectedTemple ? getTempleKey(selectedTemple.placeId, selectedTemple.name) : null;
@@ -138,6 +147,81 @@ export default function RightRail() {
       setUgcList([]);
     }
   }, [templeKey]);
+
+  // Fetch Routes when tab is selected
+  useEffect(() => {
+    const routeOrigin = deviceCoordinates || coordinates;
+    if (activeTab !== 'routes' || !selectedTemple || !routeOrigin || !isLoaded) return;
+
+    const origin = new window.google.maps.LatLng(routeOrigin.lat, routeOrigin.lng);
+    const destination = new window.google.maps.LatLng(selectedTemple.coordinates.lat, selectedTemple.coordinates.lng);
+    
+    setRouteData({ loading: true });
+
+    const directionsService = new window.google.maps.DirectionsService();
+
+    let newRouteData = {} as any;
+
+    const fetchRoute = (travelMode: google.maps.TravelMode) => {
+      return new Promise<google.maps.DirectionsResult | null>((resolve) => {
+        directionsService.route(
+          { 
+            origin, 
+            destination, 
+            travelMode,
+            drivingOptions: travelMode === window.google.maps.TravelMode.DRIVING ? {
+              departureTime: new Date(),  // for traffic info
+              trafficModel: window.google.maps.TrafficModel.BEST_GUESS
+            } : undefined
+          },
+          (result, status) => {
+            if (status === window.google.maps.DirectionsStatus.OK) {
+              resolve(result);
+            } else {
+              resolve(null);
+            }
+          }
+        );
+      });
+    };
+
+    Promise.all([
+      fetchRoute(window.google.maps.TravelMode.DRIVING),
+      fetchRoute(window.google.maps.TravelMode.TRANSIT),
+      fetchRoute(window.google.maps.TravelMode.WALKING)
+    ]).then(([drivingRes, transitRes, walkingRes]) => {
+      if (drivingRes?.routes[0]?.legs[0]) {
+        const leg = drivingRes.routes[0].legs[0];
+        newRouteData.driving = {
+          dist: leg.distance?.text || '',
+          time: leg.duration_in_traffic ? leg.duration_in_traffic.text : leg.duration?.text || ''
+        };
+      }
+      if (transitRes?.routes[0]?.legs[0]) {
+        const leg = transitRes.routes[0].legs[0];
+        newRouteData.transit = {
+          dist: leg.distance?.text || '',
+          time: leg.duration?.text || ''
+        };
+      }
+      if (walkingRes?.routes[0]?.legs[0]) {
+        const leg = walkingRes.routes[0].legs[0];
+        newRouteData.walking = {
+          dist: leg.distance?.text || '',
+          time: leg.duration?.text || ''
+        };
+      }
+      
+      if (!newRouteData.driving && !newRouteData.transit && !newRouteData.walking) {
+        newRouteData.error = "Could not calculate routes to this location.";
+      }
+      
+      setRouteData({ ...newRouteData, loading: false });
+    }).catch(() => {
+      setRouteData({ loading: false, error: "Failed to fetch routes" });
+    });
+    
+  }, [activeTab, selectedTemple, coordinates, isLoaded]);
 
   // Handle Tab change to clear form
   useEffect(() => {
@@ -575,6 +659,89 @@ export default function RightRail() {
             </div>
             
             {renderUgcSection("Community Q&A", "Ask a question or share an answer...")}
+          </div>
+        )}
+
+        {activeTab === 'routes' && (
+          <div className="space-y-4">
+             <p className="font-medium text-sm">Suggested Routes</p>
+             {routeData.loading ? (
+               <div className="flex items-center gap-3 py-4">
+                 <Loader2 className="w-5 h-5 animate-spin text-[#D13B3B]" />
+                 <span className={`text-sm ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>Calculating routes…</span>
+               </div>
+             ) : (
+               <div className="space-y-3">
+                 {/* Air Placeholder */}
+                 <div className={`p-4 rounded-xl border flex items-center gap-4 opacity-50 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
+                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
+                     <Plane className="w-5 h-5" />
+                   </div>
+                   <div>
+                     <p className="font-semibold text-sm flex items-center gap-2">
+                       Flights
+                       <span className="text-[9px] uppercase tracking-wider bg-blue-500/20 text-blue-500 px-1.5 py-0.5 rounded">Will be live soon</span>
+                     </p>
+                     <p className={`text-xs mt-0.5 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
+                       Checking available flights and airports
+                     </p>
+                   </div>
+                 </div>
+
+                 {routeData.error ? (
+                   <div className={`p-4 rounded-xl text-center text-xs ${isDark ? 'bg-white/5 text-white/40' : 'bg-black/[0.03] text-black/40'}`}>
+                     <p>{routeData.error}</p>
+                   </div>
+                 ) : (
+                   <>
+                     {/* Road */}
+                     {routeData.driving && (
+                       <div className={`p-4 rounded-xl border flex items-center gap-4 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
+                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>
+                           <Car className="w-5 h-5" />
+                         </div>
+                         <div>
+                           <p className="font-semibold text-sm">By Road (Driving / Cab)</p>
+                           <p className={`text-xs mt-0.5 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
+                             {routeData.driving.dist} · {routeData.driving.time} (with traffic)
+                           </p>
+                         </div>
+                       </div>
+                     )}
+
+                     {/* Transit */}
+                     {routeData.transit && (
+                       <div className={`p-4 rounded-xl border flex items-center gap-4 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
+                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-purple-500/20 text-purple-400' : 'bg-purple-50 text-purple-600'}`}>
+                           <TrainFront className="w-5 h-5" />
+                         </div>
+                         <div>
+                           <p className="font-semibold text-sm">Public Transport (Metro/Bus)</p>
+                           <p className={`text-xs mt-0.5 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
+                             {routeData.transit.dist} · {routeData.transit.time}
+                           </p>
+                         </div>
+                       </div>
+                     )}
+
+                     {/* Walking */}
+                     {routeData.walking && (
+                       <div className={`p-4 rounded-xl border flex items-center gap-4 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
+                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-50 text-green-600'}`}>
+                           <Footprints className="w-5 h-5" />
+                         </div>
+                         <div>
+                           <p className="font-semibold text-sm">Walking</p>
+                           <p className={`text-xs mt-0.5 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
+                             {routeData.walking.dist} · {routeData.walking.time}
+                           </p>
+                         </div>
+                       </div>
+                     )}
+                   </>
+                 )}
+               </div>
+             )}
           </div>
         )}
       </div>

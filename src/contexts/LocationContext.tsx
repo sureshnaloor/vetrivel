@@ -14,6 +14,7 @@ export interface Coordinates {
 export interface LocationState {
   type: LocationType;
   coordinates: Coordinates | null;
+  deviceCoordinates: Coordinates | null;
   address: string | null;
   isLoading: boolean;
   error: string | null;
@@ -25,7 +26,7 @@ interface LocationContextType extends LocationState {
   setLocation: (type: LocationType, coords: Coordinates, address?: string) => void;
   requestCurrentLocation: () => void;
   refreshLocations: () => Promise<void>;
-  selectLocation: (id: string | null) => void;
+  selectLocation: (id: string | null, overrideCoords?: Coordinates, overrideAddress?: string) => void;
   isLoaded: boolean;
   loadError: Error | undefined;
 }
@@ -40,6 +41,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<LocationState>({
     type: 'current',
     coordinates: null,
+    deviceCoordinates: null,
     address: null,
     isLoading: true,
     error: null,
@@ -64,6 +66,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         isLoading: false,
         error: 'Geolocation is not supported by your browser',
         coordinates: null,
+        deviceCoordinates: null,
         address: 'Location unavailable'
       }));
       return;
@@ -76,6 +79,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           type: 'current',
           activeLocationId: null,
           coordinates: {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          },
+          deviceCoordinates: {
             lat: position.coords.latitude,
             lng: position.coords.longitude,
           },
@@ -93,6 +100,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
           isLoading: false,
           error: 'Unable to retrieve your location',
           coordinates: null,
+          deviceCoordinates: null,
           address: 'Location unavailable'
         }));
       },
@@ -109,12 +117,25 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const selectLocation = (id: string | null) => {
-    console.log('[LocationContext] selectLocation called with id:', id);
+  const selectLocation = (id: string | null, overrideCoords?: Coordinates, overrideAddress?: string) => {
+    console.log('[LocationContext] selectLocation called with id:', id, 'overrideCoords:', overrideCoords);
     setState(prev => {
       const newState = { ...prev, activeLocationId: id };
       if (id) {
         localStorage.setItem('activeLocationId', id);
+        
+        // Use overrides if provided
+        if (overrideCoords) {
+          console.log('[LocationContext] Using override coordinates:', overrideCoords);
+          return {
+            ...newState,
+            type: 'planned',
+            coordinates: overrideCoords,
+            address: overrideAddress || 'Shared Nest',
+            isLoading: false
+          };
+        }
+
         const loc = prev.savedLocations.find(
           (l) => normalizeDocumentId(l._id as unknown) === String(id)
         );
