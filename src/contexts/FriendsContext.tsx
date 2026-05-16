@@ -32,7 +32,7 @@ interface FriendsContextType {
   acceptRequest: (id: string) => Promise<void>;
   rejectRequest: (id: string) => Promise<void>;
   unfriend: (id: string) => Promise<void>;
-  getInviteLink: () => Promise<string>;
+  getInviteLink: (toEmail: string) => Promise<string>;
   acceptInvite: (token: string) => Promise<string>;
   followNest: (id: string) => Promise<void>;
   unfollowNest: (id: string) => Promise<void>;
@@ -133,10 +133,10 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const getInviteLink = async (): Promise<string> => {
+  const getInviteLink = async (toEmail: string): Promise<string> => {
     setError(null);
     try {
-      return await generateInviteLink();
+      return await generateInviteLink(toEmail);
     } catch (e: any) {
       setError(e.message);
       throw e;

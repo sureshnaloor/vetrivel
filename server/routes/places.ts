@@ -1,5 +1,5 @@
 import express from "express";
-import { ObjectId } from "mongodb";
+import { Db, ObjectId } from "mongodb";
 import clientPromise from "../lib/db";
 import { requireUser } from "../middleware/requireUser";
 
@@ -8,6 +8,43 @@ export const placesRouter = express.Router();
 placesRouter.use(requireUser);
 
 const NEARBY_MAX_RADIUS_M = 50_000;
+const AUTO_FOLLOW_DISTANCE_KM = 50;
+
+type Coordinates = { lat: number; lng: number };
+
+function normalizeCoordinates(value: unknown): Coordinates | null {
+  const coords = value as Partial<Coordinates> | null | undefined;
+  const lat = Number(coords?.lat);
+  const lng = Number(coords?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+function getDistanceKm(a: Coordinates, b: Coordinates): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
+
+async function isNestAutoFollowable(
+  db: Db,
+  userEmail: string,
+  targetCoords: Coordinates
+): Promise<boolean> {
+  const userLocations = await db.collection("user_locations").find({ userEmail }).toArray();
+  return userLocations.some((loc: { coordinates?: unknown }) => {
+    const coords = normalizeCoordinates(loc.coordinates);
+    return coords ? getDistanceKm(coords, targetCoords) <= AUTO_FOLLOW_DISTANCE_KM : false;
+  });
+}
 
 // GET /api/places/nearby
 // Proxy Google Places Nearby Search (hindu_temple), same idea as web dashboard map.
@@ -204,6 +241,84 @@ placesRouter.get("/details", async (req, res) => {
   }
 });
 
+// GET /api/places/routes
+// Server-side Google Directions summary for mobile route parity with web.
+placesRouter.get("/routes", async (req, res) => {
+  const originLat = Number(req.query.originLat);
+  const originLng = Number(req.query.originLng);
+  const destLat = Number(req.query.destLat);
+  const destLng = Number(req.query.destLng);
+
+  if (
+    !Number.isFinite(originLat) ||
+    !Number.isFinite(originLng) ||
+    !Number.isFinite(destLat) ||
+    !Number.isFinite(destLng)
+  ) {
+    return res.status(400).json({
+      error: "originLat, originLng, destLat, and destLng are required",
+    });
+  }
+
+  const apiKey =
+    process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({
+      error: "Routes are not configured (set GOOGLE_MAPS_API_KEY or VITE_GOOGLE_MAPS_API_KEY)",
+    });
+  }
+
+  const fetchRoute = async (mode: "driving" | "transit" | "walking") => {
+    const url = new URL("https://maps.googleapis.com/maps/api/directions/json");
+    url.searchParams.set("origin", `${originLat},${originLng}`);
+    url.searchParams.set("destination", `${destLat},${destLng}`);
+    url.searchParams.set("mode", mode);
+    if (mode === "driving" || mode === "transit") {
+      url.searchParams.set("departure_time", "now");
+    }
+    url.searchParams.set("key", apiKey);
+
+    const gRes = await fetch(url.toString());
+    const data = (await gRes.json()) as {
+      status: string;
+      routes?: Array<{
+        legs?: Array<{
+          distance?: { text?: string; value?: number };
+          duration?: { text?: string; value?: number };
+          duration_in_traffic?: { text?: string; value?: number };
+        }>;
+      }>;
+    };
+
+    const leg = data.routes?.[0]?.legs?.[0];
+    if (data.status !== "OK" || !leg) return null;
+    return {
+      distanceText: leg.distance?.text || "",
+      durationText:
+        mode === "driving"
+          ? leg.duration_in_traffic?.text || leg.duration?.text || ""
+          : leg.duration?.text || "",
+      distanceMeters: leg.distance?.value ?? null,
+      durationSeconds:
+        mode === "driving"
+          ? leg.duration_in_traffic?.value ?? leg.duration?.value ?? null
+          : leg.duration?.value ?? null,
+    };
+  };
+
+  try {
+    const [driving, transit, walking] = await Promise.all([
+      fetchRoute("driving"),
+      fetchRoute("transit"),
+      fetchRoute("walking"),
+    ]);
+    res.json({ driving, transit, walking });
+  } catch (e) {
+    console.error("Error in /api/places/routes:", e);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // GET /api/places
 // Fetch all saved places for the authenticated user (or a friend's nest if authorized)
 placesRouter.get("/", async (req, res) => {
@@ -235,7 +350,20 @@ placesRouter.get("/", async (req, res) => {
           });
 
           if (friendRequest) {
-            // They are friends! Return the friend's places for this location.
+            const follow = await db.collection("nest_follows").findOne({
+              userEmail: user.email,
+              nestId: String(loc._id),
+            });
+            const locCoords = normalizeCoordinates(loc.coordinates);
+            const isAutoFollowable = locCoords
+              ? await isNestAutoFollowable(db, user.email, locCoords)
+              : false;
+
+            if (!follow && !isAutoFollowable) {
+              return res.status(403).json({ error: "Follow this nest to view it" });
+            }
+
+            // They are friends and this nest is followed/auto-followable.
             query = { locationId, userEmail: loc.userEmail };
           } else {
             return res.status(403).json({ error: "Unauthorized to view this nest" });

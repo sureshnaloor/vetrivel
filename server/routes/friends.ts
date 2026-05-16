@@ -9,6 +9,31 @@ export const friendsRouter = express.Router();
 friendsRouter.use(requireUser);
 
 const MAX_FRIENDS_FREE = 20;
+const AUTO_FOLLOW_DISTANCE_KM = 50;
+
+type Coordinates = { lat: number; lng: number };
+
+function normalizeCoordinates(value: unknown): Coordinates | null {
+  const coords = value as Partial<Coordinates> | null | undefined;
+  const lat = Number(coords?.lat);
+  const lng = Number(coords?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+function getDistanceKm(a: Coordinates, b: Coordinates): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
+}
 
 // Helper: get the friends collection
 async function getFriendsCol() {
@@ -60,6 +85,86 @@ async function countFriends(email: string): Promise<number> {
     status: "accepted",
     $or: [{ fromEmail: email }, { toEmail: email }],
   });
+}
+
+async function areFriends(emailA: string, emailB: string): Promise<boolean> {
+  const col = await getFriendsCol();
+  const existing = await col.findOne({
+    status: "accepted",
+    $or: [
+      { fromEmail: emailA, toEmail: emailB },
+      { fromEmail: emailB, toEmail: emailA },
+    ],
+  });
+  return !!existing;
+}
+
+async function minDistanceToUserNestKm(
+  userEmail: string,
+  targetCoords: Coordinates
+): Promise<number | null> {
+  const locCol = await getLocationsCol();
+  const userLocations = await locCol.find({ userEmail }).toArray();
+
+  let minDistance = Number.POSITIVE_INFINITY;
+  for (const loc of userLocations) {
+    const coords = normalizeCoordinates(loc.coordinates);
+    if (!coords) continue;
+    minDistance = Math.min(minDistance, getDistanceKm(coords, targetCoords));
+  }
+
+  return Number.isFinite(minDistance) ? minDistance : null;
+}
+
+async function upsertNestFollow(
+  userEmail: string,
+  friendEmail: string,
+  nestId: unknown,
+  followType: "auto" | "manual"
+) {
+  const followsCol = await getNestFollowsCol();
+  await followsCol.updateOne(
+    { userEmail, nestId: String(nestId) },
+    {
+      $setOnInsert: {
+        userEmail,
+        friendEmail,
+        nestId: String(nestId),
+        followType,
+        createdAt: new Date(),
+      },
+      $set: {
+        updatedAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+}
+
+async function autoFollowNearbyNestsForUser(userEmail: string) {
+  const friendEmails = await getFriendEmails(userEmail);
+  if (friendEmails.length === 0) return;
+
+  const locCol = await getLocationsCol();
+  const friendLocations = await locCol
+    .find({ userEmail: { $in: friendEmails } })
+    .toArray();
+
+  for (const loc of friendLocations) {
+    const coords = normalizeCoordinates(loc.coordinates);
+    if (!coords) continue;
+    const distance = await minDistanceToUserNestKm(userEmail, coords);
+    if (distance !== null && distance <= AUTO_FOLLOW_DISTANCE_KM) {
+      await upsertNestFollow(userEmail, loc.userEmail, loc._id, "auto");
+    }
+  }
+}
+
+async function autoFollowNearbyNestsForFriendship(emailA: string, emailB: string) {
+  await Promise.all([
+    autoFollowNearbyNestsForUser(emailA),
+    autoFollowNearbyNestsForUser(emailB),
+  ]);
 }
 
 // ─── GET /api/friends ────────────────────────────────────────────────────────
@@ -249,6 +354,8 @@ friendsRouter.patch("/request/:id/accept", async (req, res) => {
       }
     );
 
+    await autoFollowNearbyNestsForFriendship(request.fromEmail, user.email);
+
     res.json({ success: true });
   } catch (error) {
     console.error("Error accepting friend request:", error);
@@ -311,10 +418,25 @@ friendsRouter.delete("/:id", async (req, res) => {
 });
 
 // ─── POST /api/friends/invite ────────────────────────────────────────────────
-// Generate a single-use shareable invite link token
+// Generate a single-use invite link token bound to one recipient email
 friendsRouter.post("/invite", async (req, res) => {
   try {
     const user = (req as any).user;
+    const { toEmail } = req.body;
+
+    if (!toEmail || typeof toEmail !== "string") {
+      return res.status(400).json({ error: "Recipient email is required" });
+    }
+
+    const normalizedTo = toEmail.trim().toLowerCase();
+    if (!normalizedTo) {
+      return res.status(400).json({ error: "Recipient email is required" });
+    }
+
+    if (normalizedTo === user.email.toLowerCase()) {
+      return res.status(400).json({ error: "You cannot invite yourself" });
+    }
+
     const col = await getInvitesCol();
 
     // Always generate a fresh single-use token
@@ -323,10 +445,12 @@ friendsRouter.post("/invite", async (req, res) => {
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 day expiry
 
     await col.insertOne({
-      email: user.email,
-      name: user.name || user.email,
+      fromEmail: user.email,
+      fromName: user.name || user.email,
+      toEmail: normalizedTo,
       token,
       expiresAt,
+      usedAt: null,
       createdAt: new Date(),
     });
 
@@ -352,14 +476,19 @@ friendsRouter.post("/invite/accept", async (req, res) => {
     const invite = await invitesCol.findOne({
       token,
       expiresAt: { $gt: new Date() },
+      $or: [{ usedAt: null }, { usedAt: { $exists: false } }],
     });
 
     if (!invite) {
       return res.status(404).json({ error: "Invalid or expired invite link" });
     }
 
+    if (String(invite.toEmail).toLowerCase() !== user.email.toLowerCase()) {
+      return res.status(403).json({ error: "This invite was sent to another email" });
+    }
+
     // Cannot accept your own invite
-    if (invite.email.toLowerCase() === user.email.toLowerCase()) {
+    if (invite.fromEmail.toLowerCase() === user.email.toLowerCase()) {
       return res.status(400).json({ error: "You cannot accept your own invite" });
     }
 
@@ -368,14 +497,19 @@ friendsRouter.post("/invite/accept", async (req, res) => {
     // Check if already friends or pending
     const existing = await friendsCol.findOne({
       $or: [
-        { fromEmail: user.email, toEmail: invite.email },
-        { fromEmail: invite.email, toEmail: user.email },
+        { fromEmail: user.email, toEmail: invite.fromEmail },
+        { fromEmail: invite.fromEmail, toEmail: user.email },
       ],
     });
 
     if (existing) {
       if (existing.status === "accepted") {
-        return res.status(409).json({ error: "You are already friends" });
+        await invitesCol.updateOne(
+          { _id: invite._id },
+          { $set: { usedAt: new Date(), usedByEmail: user.email } }
+        );
+        await autoFollowNearbyNestsForFriendship(invite.fromEmail, user.email);
+        return res.json({ success: true, message: "You are already friends" });
       }
       if (existing.status === "pending") {
         // Auto-accept the pending request
@@ -389,12 +523,17 @@ friendsRouter.post("/invite/accept", async (req, res) => {
             },
           }
         );
+        await invitesCol.updateOne(
+          { _id: invite._id },
+          { $set: { usedAt: new Date(), usedByEmail: user.email } }
+        );
+        await autoFollowNearbyNestsForFriendship(invite.fromEmail, user.email);
         return res.json({ success: true, message: "Friend request accepted via invite" });
       }
     }
 
     // Check friend limits
-    const senderCount = await countFriends(invite.email);
+    const senderCount = await countFriends(invite.fromEmail);
     const acceptorCount = await countFriends(user.email);
 
     if (senderCount >= MAX_FRIENDS_FREE) {
@@ -408,8 +547,8 @@ friendsRouter.post("/invite/accept", async (req, res) => {
 
     // Create an accepted friendship directly
     const newFriend = {
-      fromEmail: invite.email,
-      fromName: invite.name || invite.email,
+      fromEmail: invite.fromEmail,
+      fromName: invite.fromName || invite.fromEmail,
       toEmail: user.email,
       toName: user.name || user.email,
       status: "accepted",
@@ -419,8 +558,12 @@ friendsRouter.post("/invite/accept", async (req, res) => {
 
     await friendsCol.insertOne(newFriend);
 
-    // Delete the invite token — single use only
-    await invitesCol.deleteOne({ _id: invite._id });
+    await invitesCol.updateOne(
+      { _id: invite._id },
+      { $set: { usedAt: new Date(), usedByEmail: user.email } }
+    );
+
+    await autoFollowNearbyNestsForFriendship(invite.fromEmail, user.email);
 
     res.json({ success: true, message: "You are now friends!" });
   } catch (error) {
@@ -434,6 +577,7 @@ friendsRouter.post("/invite/accept", async (req, res) => {
 friendsRouter.get("/nests", async (req, res) => {
   try {
     const user = (req as any).user;
+    await autoFollowNearbyNestsForUser(user.email);
     const friendEmails = await getFriendEmails(user.email);
 
     if (friendEmails.length === 0) {
@@ -444,6 +588,11 @@ friendsRouter.get("/nests", async (req, res) => {
     const friendLocations = await locCol
       .find({ userEmail: { $in: friendEmails } })
       .toArray();
+    const followsCol = await getNestFollowsCol();
+    const follows = await followsCol.find({ userEmail: user.email }).toArray();
+    const followMap = new Map(
+      follows.map((follow) => [String(follow.nestId), follow.followType || "manual"])
+    );
 
     // Attach owner info from friend_requests
     const col = await getFriendsCol();
@@ -464,14 +613,32 @@ friendsRouter.get("/nests", async (req, res) => {
       }
     });
 
-    const nests = friendLocations.map((loc) => ({
-      _id: loc._id,
-      name: loc.name,
-      coordinates: loc.coordinates,
-      address: loc.address || "",
-      ownerEmail: loc.userEmail,
-      ownerName: nameMap[loc.userEmail] || loc.userEmail,
-    }));
+    const nests = await Promise.all(
+      friendLocations.map(async (loc) => {
+        const nestId = String(loc._id);
+        const coords = normalizeCoordinates(loc.coordinates);
+        const distanceKm = coords ? await minDistanceToUserNestKm(user.email, coords) : null;
+        const followType = followMap.get(nestId);
+        const followStatus =
+          followType === "auto" || (distanceKm !== null && distanceKm <= AUTO_FOLLOW_DISTANCE_KM)
+            ? "auto"
+            : followType === "manual"
+              ? "manual"
+              : "available";
+
+        return {
+          _id: loc._id,
+          name: loc.name,
+          coordinates: loc.coordinates,
+          address: loc.address || "",
+          ownerEmail: loc.userEmail,
+          ownerName: nameMap[loc.userEmail] || loc.userEmail,
+          distanceKm,
+          followStatus,
+          canOpen: followStatus !== "available",
+        };
+      })
+    );
 
     res.json(nests);
   } catch (error) {
@@ -485,6 +652,7 @@ friendsRouter.get("/nests", async (req, res) => {
 friendsRouter.get("/nests/following", async (req, res) => {
   try {
     const user = (req as any).user;
+    await autoFollowNearbyNestsForUser(user.email);
     const col = await getNestFollowsCol();
     const follows = await col.find({ userEmail: user.email }).toArray();
     res.json(follows.map((f) => f.nestId));
@@ -506,6 +674,18 @@ friendsRouter.post("/nests/follow", async (req, res) => {
     }
 
     const col = await getNestFollowsCol();
+    const locCol = await getLocationsCol();
+
+    const nest = await locCol.findOne({ _id: new ObjectId(nestId) });
+    if (!nest) {
+      return res.status(404).json({ error: "Nest not found" });
+    }
+    if (nest.userEmail === user.email) {
+      return res.status(400).json({ error: "You cannot follow your own nest" });
+    }
+    if (!(await areFriends(user.email, nest.userEmail))) {
+      return res.status(403).json({ error: "You can only follow a friend's nest" });
+    }
 
     // Prevent duplicates
     const existing = await col.findOne({ userEmail: user.email, nestId });
@@ -515,7 +695,9 @@ friendsRouter.post("/nests/follow", async (req, res) => {
 
     await col.insertOne({
       userEmail: user.email,
+      friendEmail: nest.userEmail,
       nestId,
+      followType: "manual",
       createdAt: new Date(),
     });
 

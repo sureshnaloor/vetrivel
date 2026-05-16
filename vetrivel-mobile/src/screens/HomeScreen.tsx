@@ -146,6 +146,12 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
         </View>
         <View style={styles.headerActions}>
           <Pressable
+            style={styles.friendsButton}
+            onPress={() => navigation.navigate("Friends")}
+          >
+            <Text style={styles.friendsText}>Friends</Text>
+          </Pressable>
+          <Pressable
             style={styles.addSpaceButton}
             onPress={() => navigation.navigate("CreateSpace")}
           >
@@ -226,6 +232,14 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  friendsButton: {
+    borderWidth: 1,
+    borderColor: "#D13B3B",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  friendsText: { fontWeight: "600", fontSize: 13, color: "#D13B3B" },
   addSpaceButton: {
     backgroundColor: "#D13B3B",
     borderRadius: 8,

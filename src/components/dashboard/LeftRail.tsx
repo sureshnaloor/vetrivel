@@ -215,6 +215,7 @@ function FriendsWidget({ isDark }: { isDark: boolean }) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
   const [showSent, setShowSent] = useState(false);
+  const [inviteEmailInput, setInviteEmailInput] = useState('');
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
@@ -237,12 +238,18 @@ function FriendsWidget({ isDark }: { isDark: boolean }) {
   };
 
   const handleGenerateLink = async () => {
+    const inviteEmail = inviteEmailInput.trim().toLowerCase();
+    if (!inviteEmail) {
+      setSendError('Enter the recipient email before generating an invite link');
+      return;
+    }
     setGeneratingLink(true);
+    setSendError(null);
     try {
-      const token = await getInviteLink();
+      const token = await getInviteLink(inviteEmail);
       setInviteToken(token);
     } catch (e) {
-      console.error(e);
+      setSendError(e instanceof Error ? e.message : 'Failed to generate invite link');
     } finally {
       setGeneratingLink(false);
     }
@@ -294,18 +301,27 @@ function FriendsWidget({ isDark }: { isDark: boolean }) {
       {/* Invite Link */}
       <div className="mb-4">
         {!inviteToken ? (
-          <button
-            onClick={handleGenerateLink}
-            disabled={generatingLink}
-            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] border border-dashed transition-colors ${isDark ? 'border-white/15 text-white/50 hover:text-white/70 hover:border-white/25' : 'border-black/15 text-[#6E6A63] hover:text-[#141414] hover:border-black/25'}`}
-          >
-            {generatingLink ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-            Generate invite link
-          </button>
+          <div className="space-y-1.5">
+            <input
+              type="email"
+              placeholder="Invite link for email..."
+              value={inviteEmailInput}
+              onChange={(e) => { setInviteEmailInput(e.target.value); setSendError(null); }}
+              className={`w-full px-3 py-2 rounded-lg text-xs border outline-none transition-colors ${isDark ? 'bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-white/25' : 'bg-black/[0.02] border-black/10 text-[#141414] placeholder:text-black/30 focus:border-black/20'}`}
+            />
+            <button
+              onClick={handleGenerateLink}
+              disabled={generatingLink || !inviteEmailInput.trim()}
+              className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] border border-dashed transition-colors disabled:opacity-40 ${isDark ? 'border-white/15 text-white/50 hover:text-white/70 hover:border-white/25' : 'border-black/15 text-[#6E6A63] hover:text-[#141414] hover:border-black/25'}`}
+            >
+              {generatingLink ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+              Generate invite link
+            </button>
+          </div>
         ) : (
           <div className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
             <Link2 className="w-3 h-3 flex-shrink-0 opacity-40" />
-            <span className="truncate flex-1 opacity-60">Invite link ready</span>
+            <span className="truncate flex-1 opacity-60">Invite for {inviteEmailInput.trim()}</span>
             <button
               onClick={handleCopyLink}
               className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${copiedLink ? 'text-green-500' : isDark ? 'text-white/60 hover:text-white' : 'text-[#6E6A63] hover:text-[#141414]'}`}
@@ -427,7 +443,7 @@ function FriendsWidget({ isDark }: { isDark: boolean }) {
 
 // ─── Friend's Nests Widget ───────────────────────────────────────────────────
 function FriendNestsWidget({ isDark }: { isDark: boolean }) {
-  const { friendNests, followedNestIds, followNest, unfollowNest, loading } = useFriends();
+  const { friendNests, followNest, unfollowNest, loading } = useFriends();
   const { savedLocations, activeLocationId, deviceCoordinates, selectLocation } = useLocation();
 
   // Determine origin for distance calculation
@@ -447,18 +463,18 @@ function FriendNestsWidget({ isDark }: { isDark: boolean }) {
 
   if (friendNests.length === 0) return null;
 
-  // Process nests: calculate distance and determine status
+  // Process nests: prefer server follow state, with client distance retained for display fallback.
   const processedNests = friendNests.map(nest => {
-    const distance = originCoords ? getDistanceKm(originCoords, nest.coordinates) : null;
-    const isNearby = distance !== null && distance <= 50;
-    const isFollowed = followedNestIds.has(nest._id);
-    const shouldShow = isNearby || isFollowed;
+    const distance = nest.distanceKm ?? (originCoords ? getDistanceKm(originCoords, nest.coordinates) : null);
+    const isAutoFollowed = nest.followStatus === 'auto';
+    const isManuallyFollowed = nest.followStatus === 'manual';
+    const shouldShow = nest.canOpen;
 
-    return { ...nest, distance, isNearby, isFollowed, shouldShow };
+    return { ...nest, distance, isAutoFollowed, isManuallyFollowed, shouldShow };
   });
 
   const visibleNests = processedNests.filter(n => n.shouldShow);
-  const remoteNests = processedNests.filter(n => !n.isNearby && !n.isFollowed);
+  const remoteNests = processedNests.filter(n => !n.canOpen);
 
   return (
     <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
@@ -485,15 +501,15 @@ function FriendNestsWidget({ isDark }: { isDark: boolean }) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate">{nest.name}</span>
-                      {nest.isNearby && (
+                      {nest.isAutoFollowed && (
                         <span className={`text-[8px] px-1 py-0.5 rounded uppercase font-bold tracking-tighter ${isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-100 text-green-700'}`}>
-                          Nearby
+                          Auto
                         </span>
                       )}
                     </div>
                     <p className={`text-[10px] truncate opacity-50`}>By {nest.ownerName} • {nest.distance?.toFixed(1)} km</p>
                   </div>
-                  {!nest.isNearby && nest.isFollowed && (
+                  {nest.isManuallyFollowed && (
                     <button
                       onClick={(e) => { e.stopPropagation(); unfollowNest(nest._id); }}
                       className={`p-1.5 rounded-md hover:bg-black/10 transition-colors ${isDark ? 'hover:bg-white/10' : ''}`}
@@ -519,7 +535,9 @@ function FriendNestsWidget({ isDark }: { isDark: boolean }) {
                 <div key={nest._id} className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isDark ? 'bg-white/5' : 'bg-black/[0.02]'}`}>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium truncate">{nest.name}</p>
-                    <p className="text-[9px] opacity-50 truncate">By {nest.ownerName} • {nest.distance?.toFixed(0)} km away</p>
+                    <p className="text-[9px] opacity-50 truncate">
+                      By {nest.ownerName}{nest.distance != null ? ` • ${nest.distance.toFixed(0)} km away` : ''}
+                    </p>
                   </div>
                   <button
                     onClick={() => followNest(nest._id)}

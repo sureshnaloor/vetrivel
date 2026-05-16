@@ -12,6 +12,9 @@ export interface FriendNest {
   address: string;
   ownerEmail: string;
   ownerName: string;
+  distanceKm: number | null;
+  followStatus: 'auto' | 'manual' | 'available';
+  canOpen: boolean;
 }
 
 export interface FriendRequest {
@@ -98,12 +101,17 @@ export const removeFriend = async (id: string): Promise<void> => {
 
 // ─── Invite Links ────────────────────────────────────────────────────────────
 
-export const generateInviteLink = async (): Promise<string> => {
+export const generateInviteLink = async (toEmail: string): Promise<string> => {
   const res = await fetch(`${API_BASE}/invite`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
+    body: JSON.stringify({ toEmail }),
   });
-  if (!res.ok) throw new Error('Failed to generate invite link');
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.error || 'Failed to generate invite link');
+  }
   const data = await res.json();
   return data.token;
 };

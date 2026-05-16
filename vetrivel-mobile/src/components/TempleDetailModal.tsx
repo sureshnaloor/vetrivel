@@ -1,4 +1,5 @@
 import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,12 +18,14 @@ import type {
   GooglePlaceDetails,
   TempleContent,
   TempleContentTab,
+  TempleRoutes,
 } from "../api";
 import {
   createTempleContent,
   deleteTempleContent,
   fetchTempleContent,
   getPlaceDetails,
+  getTempleRoutes,
   getTempleKey,
   updateTempleContent,
 } from "../api";
@@ -47,11 +50,14 @@ type Props = {
   userEmail: string;
 };
 
-const TABS: { id: TempleContentTab; label: string }[] = [
+type ActiveTab = TempleContentTab | "routes";
+
+const TABS: { id: ActiveTab; label: string }[] = [
   { id: "info", label: "Info" },
   { id: "pooja", label: "Pooja" },
   { id: "media", label: "Media" },
   { id: "qa", label: "Q&A" },
+  { id: "routes", label: "Routes" },
 ];
 
 function stars(n: number | undefined): string {
@@ -66,10 +72,13 @@ export function TempleDetailModal({
   accessToken,
   userEmail,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<TempleContentTab>("info");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("info");
   const [details, setDetails] = useState<GooglePlaceDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [routes, setRoutes] = useState<TempleRoutes | null>(null);
+  const [loadingRoutes, setLoadingRoutes] = useState(false);
+  const [routesError, setRoutesError] = useState<string | null>(null);
   const [expandedAbout, setExpandedAbout] = useState(false);
   const [photoLightboxIdx, setPhotoLightboxIdx] = useState<number | null>(
     null
@@ -157,6 +166,43 @@ export function TempleDetailModal({
   }, [visible, templeKey]);
 
   useEffect(() => {
+    if (!visible || activeTab !== "routes" || !temple) return;
+    let cancelled = false;
+    setLoadingRoutes(true);
+    setRoutesError(null);
+    setRoutes(null);
+
+    (async () => {
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== "granted") {
+        throw new Error("Location permission is needed to calculate routes.");
+      }
+      const pos = await Location.getCurrentPositionAsync({});
+      return getTempleRoutes(accessToken, {
+        originLat: pos.coords.latitude,
+        originLng: pos.coords.longitude,
+        destLat: temple.lat,
+        destLng: temple.lng,
+      });
+    })()
+      .then((value) => {
+        if (!cancelled) setRoutes(value);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) {
+          setRoutesError(e instanceof Error ? e.message : "Could not calculate routes");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRoutes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, activeTab, temple, accessToken]);
+
+  useEffect(() => {
     setShowUgcForm(false);
     setUgcInput("");
     setEditingId(null);
@@ -164,7 +210,10 @@ export function TempleDetailModal({
   }, [activeTab]);
 
   const currentUgc = useMemo(
-    () => ugcList.filter((item) => item.tab === activeTab),
+    () =>
+      activeTab === "routes"
+        ? []
+        : ugcList.filter((item) => item.tab === activeTab),
     [ugcList, activeTab]
   );
 
@@ -175,6 +224,13 @@ export function TempleDetailModal({
       `https://www.google.com/maps/search/?api=1&query=${temple.lat},${temple.lng}`;
     Linking.openURL(url).catch(() => {});
   }, [temple, details?.mapsUrl]);
+
+  const openDirections = useCallback(() => {
+    if (!temple) return;
+    Linking.openURL(
+      `https://www.google.com/maps/dir/?api=1&destination=${temple.lat},${temple.lng}`
+    ).catch(() => {});
+  }, [temple]);
 
   const openWikipedia = useCallback(() => {
     const q = encodeURIComponent(displayName);
@@ -194,6 +250,7 @@ export function TempleDetailModal({
   }, [templeKey]);
 
   const handleAddTextUgc = async () => {
+    if (activeTab === "routes") return;
     if (!templeKey || !ugcInput.trim()) return;
     setSubmittingUgc(true);
     try {
@@ -312,7 +369,9 @@ export function TempleDetailModal({
         ? "Community pooja timings"
         : activeTab === "media"
           ? "Community photos"
-          : "Community Q&A";
+          : activeTab === "qa"
+            ? "Community Q&A"
+            : "";
 
   const communityPlaceholder =
     activeTab === "info"
@@ -565,6 +624,50 @@ export function TempleDetailModal({
               </View>
             )}
 
+            {activeTab === "routes" && (
+              <View>
+                <Text style={styles.sectionHeading}>Routes</Text>
+                {loadingRoutes ? (
+                  <View style={styles.routeCard}>
+                    <ActivityIndicator color={ACCENT} />
+                    <Text style={styles.muted}>Calculating routes from your location…</Text>
+                  </View>
+                ) : routesError ? (
+                  <View style={styles.routeCard}>
+                    <Text style={styles.warn}>{routesError}</Text>
+                    <Pressable onPress={openDirections}>
+                      <Text style={styles.link}>Open directions in Maps ↗</Text>
+                    </Pressable>
+                  </View>
+                ) : routes ? (
+                  <View>
+                    {[
+                      ["Driving", routes.driving],
+                      ["Transit", routes.transit],
+                      ["Walking", routes.walking],
+                    ].map(([label, route]) => (
+                      <View key={String(label)} style={styles.routeCard}>
+                        <Text style={styles.routeMode}>{String(label)}</Text>
+                        {route ? (
+                          <Text style={styles.body}>
+                            {route.durationText || "—"} · {route.distanceText || "—"}
+                          </Text>
+                        ) : (
+                          <Text style={styles.muted}>No route available.</Text>
+                        )}
+                      </View>
+                    ))}
+                    <Pressable onPress={openDirections} style={styles.wikiBtn}>
+                      <Text style={styles.link}>Open turn-by-turn directions ↗</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Text style={styles.muted}>Select Routes to calculate travel options.</Text>
+                )}
+              </View>
+            )}
+
+            {activeTab !== "routes" ? (
             <View style={styles.communityBlock}>
               <View style={styles.communityHeader}>
                 <Text style={styles.sectionHeading}>{communityTitle}</Text>
@@ -730,6 +833,7 @@ export function TempleDetailModal({
                 <Text style={styles.mutedSmall}>Tap to refresh community posts</Text>
               </Pressable>
             </View>
+            ) : null}
           </View>
         </ScrollView>
 
@@ -909,6 +1013,16 @@ const styles = StyleSheet.create({
     padding: 12,
     marginTop: 4,
   },
+  routeCard: {
+    borderWidth: 1,
+    borderColor: "#e8e8e8",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    backgroundColor: "#fafafa",
+    gap: 6,
+  },
+  routeMode: { fontSize: 13, fontWeight: "700", color: "#333" },
   communityBlock: {
     marginTop: 24,
     paddingTop: 20,

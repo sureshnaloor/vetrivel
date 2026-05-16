@@ -116,7 +116,7 @@ function Section({
 }
 
 export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
-  const { locationId, address, latitude, longitude } = route.params;
+  const { locationId, address, latitude, longitude, ownerName, isFriendNest } = route.params;
   const nestCenter = useMemo(
     () => ({ lat: latitude, lng: longitude }),
     [latitude, longitude]
@@ -241,6 +241,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
 
   const addNearby = useCallback(
     async (t: NearbyTemple, category: "nest" | "interest") => {
+      if (isFriendNest) return;
       if (!t.placeId) return;
       setSavingPlaceId(t.placeId);
       try {
@@ -260,11 +261,12 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
         setSavingPlaceId(null);
       }
     },
-    [accessToken, locationId, loadPlaces]
+    [accessToken, isFriendNest, locationId, loadPlaces]
   );
 
   const submitManual = useCallback(async () => {
     const name = manualName.trim();
+    if (isFriendNest) return;
     if (!name) {
       Alert.alert("Name required", "Enter a temple name.");
       return;
@@ -287,7 +289,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
     } finally {
       setSavingPlaceId(null);
     }
-  }, [manualName, manualCategory, accessToken, locationId, nestCenter, loadPlaces]);
+  }, [manualName, manualCategory, accessToken, isFriendNest, locationId, nestCenter, loadPlaces]);
 
   const runSearch = useCallback(() => {
     loadNearby(searchInput);
@@ -364,6 +366,11 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
             {address}
           </Text>
         ) : null}
+        {isFriendNest ? (
+          <Text style={styles.friendNotice}>
+            Viewing {ownerName ? `${ownerName}'s` : "a friend's"} nest. Friend nests are read-only.
+          </Text>
+        ) : null}
 
         <SpaceMap
           height={240}
@@ -379,7 +386,11 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
           title="Nest temples"
           subtitle="Anchor temples for this space"
           places={nestTemples}
-          emptyLabel="No nest temples yet — add from Nearby below or create manually."
+          emptyLabel={
+            isFriendNest
+              ? "No nest temples in this friend's space yet."
+              : "No nest temples yet — add from Nearby below or create manually."
+          }
           onOpenPlace={openSavedPlaceDetail}
           selectedMarkerId={detailMarkerId}
         />
@@ -455,7 +466,9 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
                   </Text>
                   <Text style={styles.tapDetails}>Tap card for details · Google Places</Text>
                 </Pressable>
-                {saved ? (
+                {isFriendNest ? (
+                  <Text style={styles.savedBadge}>Read-only friend nest</Text>
+                ) : saved ? (
                   <Text style={styles.savedBadge}>Already in this space</Text>
                 ) : (
                   <View style={styles.addRow}>
@@ -480,9 +493,11 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
           })}
         </View>
 
-        <Pressable style={styles.manualBtn} onPress={() => setManualOpen(true)}>
-          <Text style={styles.manualBtnText}>Add temple by name (this location)</Text>
-        </Pressable>
+        {!isFriendNest ? (
+          <Pressable style={styles.manualBtn} onPress={() => setManualOpen(true)}>
+            <Text style={styles.manualBtnText}>Add temple by name (this location)</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
 
       <TempleDetailModal
@@ -587,6 +602,17 @@ const styles = StyleSheet.create({
     color: "#555",
     marginBottom: 12,
     lineHeight: 20,
+  },
+  friendNotice: {
+    borderWidth: 1,
+    borderColor: "#f0d4d4",
+    backgroundColor: "#fff7f7",
+    color: "#8a3131",
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
   },
   error: {
     color: "#b00020",

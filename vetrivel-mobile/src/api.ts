@@ -53,6 +53,34 @@ export type UserLocation = {
   address?: string;
 };
 
+export type Friend = {
+  _id: string;
+  email: string;
+  name: string;
+  since: string;
+};
+
+export type FriendRequest = {
+  _id: string;
+  fromEmail: string;
+  fromName: string;
+  toEmail: string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: string;
+};
+
+export type FriendNest = {
+  _id: string;
+  name: string;
+  coordinates: LatLng;
+  address?: string;
+  ownerEmail: string;
+  ownerName: string;
+  distanceKm: number | null;
+  followStatus: "auto" | "manual" | "available";
+  canOpen: boolean;
+};
+
 export type UserPlaceCategory = "nest" | "interest" | "pin";
 
 export type UserPlace = {
@@ -150,6 +178,144 @@ export async function getLocations(accessToken: string): Promise<UserLocation[]>
     if (loc) out.push(loc);
   }
   return out;
+}
+
+function mapFriendNestRow(row: Record<string, unknown>): FriendNest | null {
+  const id = normalizeDocumentId(row._id);
+  if (!id) return null;
+  const coords = normalizeLatLng(row.coordinates);
+  if (!coords) return null;
+  const status = row.followStatus;
+  const followStatus: FriendNest["followStatus"] =
+    status === "auto" || status === "manual" || status === "available"
+      ? status
+      : "available";
+  return {
+    _id: id,
+    name: String(row.name ?? ""),
+    coordinates: coords,
+    address: row.address != null ? String(row.address) : undefined,
+    ownerEmail: String(row.ownerEmail ?? ""),
+    ownerName: String(row.ownerName ?? row.ownerEmail ?? ""),
+    distanceKm:
+      typeof row.distanceKm === "number" && Number.isFinite(row.distanceKm)
+        ? row.distanceKm
+        : null,
+    followStatus,
+    canOpen: Boolean(row.canOpen),
+  };
+}
+
+export async function getFriends(accessToken: string): Promise<Friend[]> {
+  const { data } = await api.get("/api/friends", {
+    headers: authHeaders(accessToken),
+  });
+  return data as Friend[];
+}
+
+export async function getIncomingFriendRequests(
+  accessToken: string
+): Promise<FriendRequest[]> {
+  const { data } = await api.get("/api/friends/requests", {
+    headers: authHeaders(accessToken),
+  });
+  return data as FriendRequest[];
+}
+
+export async function getSentFriendRequests(
+  accessToken: string
+): Promise<FriendRequest[]> {
+  const { data } = await api.get("/api/friends/sent", {
+    headers: authHeaders(accessToken),
+  });
+  return data as FriendRequest[];
+}
+
+export async function sendFriendRequest(
+  accessToken: string,
+  toEmail: string
+): Promise<FriendRequest> {
+  const { data } = await api.post(
+    "/api/friends/request",
+    { toEmail },
+    { headers: authHeaders(accessToken) }
+  );
+  return data as FriendRequest;
+}
+
+export async function acceptFriendRequest(
+  accessToken: string,
+  requestId: string
+): Promise<void> {
+  await api.patch(`/api/friends/request/${requestId}/accept`, undefined, {
+    headers: authHeaders(accessToken),
+  });
+}
+
+export async function rejectFriendRequest(
+  accessToken: string,
+  requestId: string
+): Promise<void> {
+  await api.patch(`/api/friends/request/${requestId}/reject`, undefined, {
+    headers: authHeaders(accessToken),
+  });
+}
+
+export async function createFriendInvite(
+  accessToken: string,
+  toEmail: string
+): Promise<string> {
+  const { data } = await api.post(
+    "/api/friends/invite",
+    { toEmail },
+    { headers: authHeaders(accessToken) }
+  );
+  return String((data as { token: string }).token);
+}
+
+export async function acceptFriendInvite(
+  accessToken: string,
+  token: string
+): Promise<string> {
+  const { data } = await api.post(
+    "/api/friends/invite/accept",
+    { token },
+    { headers: authHeaders(accessToken) }
+  );
+  return String((data as { message?: string }).message ?? "You are now friends!");
+}
+
+export async function getFriendNests(accessToken: string): Promise<FriendNest[]> {
+  const { data } = await api.get("/api/friends/nests", {
+    headers: authHeaders(accessToken),
+  });
+  const rows = data as Record<string, unknown>[];
+  const out: FriendNest[] = [];
+  for (const row of rows) {
+    const nest = mapFriendNestRow(row);
+    if (nest) out.push(nest);
+  }
+  return out;
+}
+
+export async function followFriendNest(
+  accessToken: string,
+  nestId: string
+): Promise<void> {
+  await api.post(
+    "/api/friends/nests/follow",
+    { nestId },
+    { headers: authHeaders(accessToken) }
+  );
+}
+
+export async function unfollowFriendNest(
+  accessToken: string,
+  nestId: string
+): Promise<void> {
+  await api.delete(`/api/friends/nests/follow/${nestId}`, {
+    headers: authHeaders(accessToken),
+  });
 }
 
 function mapPlaceRow(row: Record<string, unknown>): UserPlace | null {
@@ -276,6 +442,35 @@ export type GooglePlaceDetails = {
   photoUrls?: string[];
   mapsUrl?: string | null;
 };
+
+export type RouteLegSummary = {
+  distanceText: string;
+  durationText: string;
+  distanceMeters: number | null;
+  durationSeconds: number | null;
+};
+
+export type TempleRoutes = {
+  driving: RouteLegSummary | null;
+  transit: RouteLegSummary | null;
+  walking: RouteLegSummary | null;
+};
+
+export async function getTempleRoutes(
+  accessToken: string,
+  params: {
+    originLat: number;
+    originLng: number;
+    destLat: number;
+    destLng: number;
+  }
+): Promise<TempleRoutes> {
+  const { data } = await api.get("/api/places/routes", {
+    headers: authHeaders(accessToken),
+    params,
+  });
+  return data as TempleRoutes;
+}
 
 /** Google Place Details via server proxy (requires auth). */
 export async function getPlaceDetails(

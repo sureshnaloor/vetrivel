@@ -1,5 +1,6 @@
 export type RootStackParamList = {
   Home: undefined;
+  Friends: undefined;
   CreateSpace: undefined;
   NestDetail: {
     locationId: string;
@@ -7,5 +8,7 @@ export type RootStackParamList = {
     latitude: number;
     longitude: number;
     address?: string;
+    ownerName?: string;
+    isFriendNest?: boolean;
   };
 };
