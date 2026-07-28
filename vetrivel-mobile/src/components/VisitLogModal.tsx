@@ -22,6 +22,7 @@ import {
   getPlaceVisits,
   todayDateInputValue,
   type PlaceVisit,
+  type VisitMediaSource,
 } from "../api";
 
 type Props = {
@@ -31,6 +32,12 @@ type Props = {
   placeDocId: string;
   placeName: string;
   onVisitsChanged?: () => void;
+};
+
+type PendingMedia = {
+  mediaUrl: string;
+  mediaType: string;
+  source: VisitMediaSource;
 };
 
 export function VisitLogModal({
@@ -46,9 +53,7 @@ export function VisitLogModal({
   const [saving, setSaving] = useState(false);
   const [visitDate, setVisitDate] = useState(todayDateInputValue());
   const [remarks, setRemarks] = useState("");
-  const [pendingMedia, setPendingMedia] = useState<
-    Array<{ mediaUrl: string; mediaType: string }>
-  >([]);
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [busyMediaVisitId, setBusyMediaVisitId] = useState<string | null>(null);
 
   const loadVisits = useCallback(async () => {
@@ -72,10 +77,59 @@ export function VisitLogModal({
     void loadVisits();
   }, [visible, loadVisits]);
 
-  const pickMedia = async (forVisitId: string | null) => {
+  const ingestAssets = async (
+    assets: ImagePicker.ImagePickerAsset[],
+    forVisitId: string | null,
+    source: VisitMediaSource
+  ) => {
+    const sliced = assets.slice(0, 6);
+
+    if (!forVisitId) {
+      const next: PendingMedia[] = [];
+      for (const asset of sliced) {
+        if (!asset.base64) continue;
+        const mime =
+          asset.mimeType ||
+          (asset.type === "video" ? "video/mp4" : "image/jpeg");
+        next.push({
+          mediaUrl: `data:${mime};base64,${asset.base64}`,
+          mediaType: mime,
+          source,
+        });
+      }
+      setPendingMedia((prev) => [...prev, ...next].slice(0, 8));
+      return;
+    }
+
+    setBusyMediaVisitId(forVisitId);
+    try {
+      for (const asset of sliced) {
+        if (!asset.base64) continue;
+        const mime =
+          asset.mimeType ||
+          (asset.type === "video" ? "video/mp4" : "image/jpeg");
+        await addVisitMedia(accessToken, forVisitId, {
+          mediaUrl: `data:${mime};base64,${asset.base64}`,
+          mediaType: mime,
+          source,
+        });
+      }
+      await loadVisits();
+      onVisitsChanged?.();
+    } catch (e) {
+      Alert.alert("Upload failed", getApiErrorMessage(e));
+    } finally {
+      setBusyMediaVisitId(null);
+    }
+  };
+
+  const pickFromLibrary = async (forVisitId: string | null) => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Permission needed", "Allow photo library access to attach media.");
+      Alert.alert(
+        "Permission needed",
+        "Allow photo library access to attach media."
+      );
       return;
     }
 
@@ -88,43 +142,66 @@ export function VisitLogModal({
     });
 
     if (result.canceled || !result.assets?.length) return;
+    await ingestAssets(result.assets, forVisitId, "upload");
+  };
 
-    const assets = result.assets.slice(0, 6);
-
-    if (!forVisitId) {
-      const next: Array<{ mediaUrl: string; mediaType: string }> = [];
-      for (const asset of assets) {
-        if (!asset.base64) continue;
-        const mime =
-          asset.mimeType ||
-          (asset.type === "video" ? "video/mp4" : "image/jpeg");
-        const dataUrl = `data:${mime};base64,${asset.base64}`;
-        next.push({ mediaUrl: dataUrl, mediaType: mime });
-      }
-      setPendingMedia((prev) => [...prev, ...next].slice(0, 8));
+  const captureWithCamera = async (forVisitId: string | null) => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert(
+        "Permission needed",
+        "Allow camera access to photograph this visit."
+      );
       return;
     }
 
-    setBusyMediaVisitId(forVisitId);
-    try {
-      for (const asset of assets) {
-        if (!asset.base64) continue;
-        const mime =
-          asset.mimeType ||
-          (asset.type === "video" ? "video/mp4" : "image/jpeg");
-        await addVisitMedia(accessToken, forVisitId, {
-          mediaUrl: `data:${mime};base64,${asset.base64}`,
-          mediaType: mime,
-          source: "upload",
-        });
-      }
-      await loadVisits();
-      onVisitsChanged?.();
-    } catch (e) {
-      Alert.alert("Upload failed", getApiErrorMessage(e));
-    } finally {
-      setBusyMediaVisitId(null);
-    }
+    Alert.alert("Camera", "What would you like to capture?", [
+      {
+        text: "Photo",
+        onPress: () => {
+          void (async () => {
+            const result = await ImagePicker.launchCameraAsync({
+              mediaTypes: ["images"],
+              quality: 0.7,
+              base64: true,
+              allowsEditing: false,
+            });
+            if (result.canceled || !result.assets?.length) return;
+            await ingestAssets(result.assets, forVisitId, "camera");
+          })();
+        },
+      },
+      {
+        text: "Video",
+        onPress: () => {
+          void (async () => {
+            const result = await ImagePicker.launchCameraAsync({
+              mediaTypes: ["videos"],
+              quality: 0.6,
+              base64: true,
+              videoMaxDuration: 30,
+            });
+            if (result.canceled || !result.assets?.length) return;
+            await ingestAssets(result.assets, forVisitId, "camera");
+          })();
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const chooseAddMedia = (forVisitId: string | null) => {
+    Alert.alert("Add media", "Choose a source", [
+      {
+        text: "Take photo / video",
+        onPress: () => void captureWithCamera(forVisitId),
+      },
+      {
+        text: "Photo library",
+        onPress: () => void pickFromLibrary(forVisitId),
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   const handleSave = async () => {
@@ -135,7 +212,11 @@ export function VisitLogModal({
         placeDocId,
         visitDate: visitDate.trim() || todayDateInputValue(),
         remarks: remarks.trim(),
-        media: pendingMedia.map((m) => ({ ...m, source: "upload" as const })),
+        media: pendingMedia.map((m) => ({
+          mediaUrl: m.mediaUrl,
+          mediaType: m.mediaType,
+          source: m.source,
+        })),
       });
       setRemarks("");
       setPendingMedia([]);
@@ -219,21 +300,34 @@ export function VisitLogModal({
             textAlignVertical="top"
           />
 
-          <View style={styles.row}>
-            <Text style={styles.label}>Photos & videos</Text>
-            <Pressable onPress={() => void pickMedia(null)} style={styles.linkBtn}>
-              <Text style={styles.linkBtnText}>Add from library</Text>
+          <Text style={styles.label}>Photos & videos</Text>
+          <View style={styles.mediaActions}>
+            <Pressable
+              onPress={() => void captureWithCamera(null)}
+              style={styles.secondaryBtn}
+            >
+              <Text style={styles.secondaryBtnText}>Take photo / video</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void pickFromLibrary(null)}
+              style={styles.linkBtnInline}
+            >
+              <Text style={styles.linkBtnText}>From library</Text>
             </Pressable>
           </View>
           {pendingMedia.length > 0 ? (
             <Text style={styles.hint}>
-              {pendingMedia.length} file{pendingMedia.length === 1 ? "" : "s"} ready to
-              attach on save.
+              {pendingMedia.length} file{pendingMedia.length === 1 ? "" : "s"} ready
+              to attach on save
+              {pendingMedia.some((m) => m.source === "camera")
+                ? " (includes camera captures)"
+                : ""}
+              .
             </Text>
           ) : (
             <Text style={styles.hint}>
-              Library upload now; in-app camera capture coming later. Keep photos small
-              (~2MB) and videos short.
+              Capture at the temple or pick from your library. Keep photos small
+              (~2MB) and videos under ~30s.
             </Text>
           )}
 
@@ -289,11 +383,13 @@ export function VisitLogModal({
                 ) : null}
                 <Pressable
                   disabled={busyMediaVisitId === v._id}
-                  onPress={() => void pickMedia(v._id)}
+                  onPress={() => chooseAddMedia(v._id)}
                   style={styles.linkBtn}
                 >
                   <Text style={styles.linkBtnText}>
-                    {busyMediaVisitId === v._id ? "Uploading…" : "Add media"}
+                    {busyMediaVisitId === v._id
+                      ? "Uploading…"
+                      : "Add photo, video, or camera"}
                   </Text>
                 </Pressable>
               </View>
@@ -363,6 +459,29 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  mediaActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4,
+  },
+  secondaryBtn: {
+    backgroundColor: "rgba(45,212,191,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(45,212,191,0.35)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  secondaryBtnText: {
+    color: "#2DD4BF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  linkBtnInline: {
+    paddingVertical: 8,
   },
   linkBtn: {
     marginTop: 8,
