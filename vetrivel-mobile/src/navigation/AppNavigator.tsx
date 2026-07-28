@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { MobileAuthSession } from "../auth";
+import { CommunitiesScreen } from "../screens/CommunitiesScreen";
 import { CreateSpaceScreen } from "../screens/CreateSpaceScreen";
 import { FriendsScreen } from "../screens/FriendsScreen";
 import { HomeScreen } from "../screens/HomeScreen";
@@ -35,6 +36,15 @@ export function AppNavigator({ session, onLogout }: Props) {
       <Stack.Screen name="Friends" options={{ title: "Friends" }}>
         {(props) => (
           <FriendsScreen {...props} accessToken={session.accessToken} />
+        )}
+      </Stack.Screen>
+      <Stack.Screen name="Communities" options={{ title: "Communities" }}>
+        {(props) => (
+          <CommunitiesScreen
+            {...props}
+            accessToken={session.accessToken}
+            userEmail={session.user.email}
+          />
         )}
       </Stack.Screen>
       <Stack.Screen

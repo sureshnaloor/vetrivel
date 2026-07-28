@@ -6,6 +6,8 @@ export interface UserPlace {
   coordinates: { lat: number, lng: number };
   category: 'nest' | 'interest' | 'pin';
   status: 'planned' | 'visited' | 'recommended' | 'wishlist' | 'place of interest';
+  /** YYYY-MM-DD of most recent logged visit, if any */
+  lastVisitDate?: string | null;
   createdAt?: Date;
 }
 

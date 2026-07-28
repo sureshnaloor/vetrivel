@@ -11,6 +11,7 @@ import PlaceholderPage from './pages/PlaceholderPage';
 import ExploreMap from './pages/ExploreMap';
 import { LocationProvider } from './contexts/LocationContext';
 import { FriendsProvider } from './contexts/FriendsContext';
+import { CommunitiesProvider } from './contexts/CommunitiesContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
@@ -31,7 +32,9 @@ function App() {
             <Route path="/dashboard" element={
               <LocationProvider>
                 <FriendsProvider>
-                  <Dashboard />
+                  <CommunitiesProvider>
+                    <Dashboard />
+                  </CommunitiesProvider>
                 </FriendsProvider>
               </LocationProvider>
             } />

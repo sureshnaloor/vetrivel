@@ -147,6 +147,12 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
         <View style={styles.headerActions}>
           <Pressable
             style={styles.friendsButton}
+            onPress={() => navigation.navigate("Communities")}
+          >
+            <Text style={styles.friendsText}>Communities</Text>
+          </Pressable>
+          <Pressable
+            style={styles.friendsButton}
             onPress={() => navigation.navigate("Friends")}
           >
             <Text style={styles.friendsText}>Friends</Text>

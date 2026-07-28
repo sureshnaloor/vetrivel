@@ -4,20 +4,25 @@ import { useLocation } from '../../contexts/LocationContext';
 import { useDashboardPinned } from '../../contexts/DashboardPinnedContext';
 import { useAuth } from '../../hooks/useAuth';
 import { useFriends } from '../../contexts/FriendsContext';
+import { useCommunities } from '../../contexts/CommunitiesContext';
 import { fetchPlaces, type UserPlace } from '../../services/places';
-import { MapPin, UserPlus, Check, X, Trash2, Link2, Copy, ChevronDown, ChevronUp, Loader2, Users } from 'lucide-react';
+import type { UserLocation } from '../../services/locations';
+import { MapPin, UserPlus, Check, X, Trash2, Link2, Copy, ChevronDown, ChevronUp, Loader2, Users, Globe, MessageSquare, HandHeart } from 'lucide-react';
 import { getDistanceKm, normalizeDocumentId } from '../../lib/geo';
+import PublishSpaceDialog from './PublishSpaceDialog';
+import CommunityBoardDialog from './CommunityBoardDialog';
 
 export default function LeftRail() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const { savedLocations, activeLocationId, selectLocation } = useLocation();
+  const { savedLocations, activeLocationId, selectLocation, refreshLocations } = useLocation();
   const { friendNests } = useFriends();
   const { session } = useAuth();
   const { setPinToAssign, pinToAssign, pinnedListVersion } = useDashboardPinned();
   const [allPlaces, setAllPlaces] = useState<UserPlace[]>([]);
   const [friendPlaces, setFriendPlaces] = useState<UserPlace[]>([]);
   const [loadingPins, setLoadingPins] = useState(false);
+  const [publishTarget, setPublishTarget] = useState<UserLocation | null>(null);
 
   const activeFriendNest = friendNests.find(n => normalizeDocumentId(n._id) === normalizeDocumentId(activeLocationId));
   const isFriendNest = !!activeFriendNest;
@@ -136,19 +141,47 @@ export default function LeftRail() {
           {savedLocations.length > 0 ? (
             savedLocations.map(loc => {
               const isActive = normalizeDocumentId(activeLocationId) === normalizeDocumentId(loc._id);
+              const isPublished = loc.visibility === 'published';
               return (
-                <button 
+                <div
                   key={String(normalizeDocumentId(loc._id))}
-                  onClick={() => selectLocation(normalizeDocumentId(loc._id))}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3 ${
+                  className={`rounded-xl transition-all ${
                     isActive
-                      ? (isDark ? 'bg-[#0D9488]/20 text-[#2DD4BF] font-semibold' : 'bg-[#0D9488]/10 text-[#0D9488] font-semibold')
-                      : (isDark ? 'text-white/60 hover:bg-white/5 hover:text-white' : 'text-[#6E6A63] hover:bg-black/5 hover:text-black')
+                      ? (isDark ? 'bg-[#0D9488]/20' : 'bg-[#0D9488]/10')
+                      : ''
                   }`}
                 >
-                  <MapPin className={`w-4 h-4 ${isActive ? 'text-[#0D9488]' : 'opacity-40'}`} />
-                  <span className="truncate">{loc.name}</span>
-                </button>
+                  <button
+                    onClick={() => selectLocation(normalizeDocumentId(loc._id))}
+                    className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-3 ${
+                      isActive
+                        ? (isDark ? 'text-[#2DD4BF] font-semibold' : 'text-[#0D9488] font-semibold')
+                        : (isDark ? 'text-white/60 hover:text-white' : 'text-[#6E6A63] hover:text-black')
+                    }`}
+                  >
+                    <MapPin className={`w-4 h-4 shrink-0 ${isActive ? 'text-[#0D9488]' : 'opacity-40'}`} />
+                    <span className="truncate flex-1">{loc.name}</span>
+                    {isPublished && (
+                      <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${isDark ? 'bg-[#0D9488]/25 text-[#2DD4BF]' : 'bg-[#0D9488]/15 text-[#0D9488]'}`}>
+                        Public
+                      </span>
+                    )}
+                  </button>
+                  <div className="px-3 pb-2 flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPublishTarget(loc)}
+                      className={`text-[10px] px-2 py-1 rounded-md border flex items-center gap-1 transition-colors ${
+                        isDark
+                          ? 'border-white/15 text-white/55 hover:bg-white/5'
+                          : 'border-black/10 text-[#6E6A63] hover:bg-black/5'
+                      }`}
+                    >
+                      <Globe className="w-3 h-3" />
+                      {isPublished ? 'Edit publish' : 'Publish'}
+                    </button>
+                  </div>
+                </div>
               );
             })
           ) : (
@@ -158,6 +191,9 @@ export default function LeftRail() {
           )}
         </div>
       </div>
+
+      {/* Communities */}
+      <CommunitiesWidget isDark={isDark} />
 
       {/* Pinned from Explore — assign to Nest / Interest on the map */}
       <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
@@ -203,6 +239,253 @@ export default function LeftRail() {
 
       {/* Friends Section */}
       <FriendsWidget isDark={isDark} />
+
+      {publishTarget && (
+        <PublishSpaceDialog
+          open={!!publishTarget}
+          onOpenChange={(open) => {
+            if (!open) setPublishTarget(null);
+          }}
+          location={publishTarget}
+          onUpdated={() => {
+            void refreshLocations();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Communities Widget ──────────────────────────────────────────────────────
+function CommunitiesWidget({ isDark }: { isDark: boolean }) {
+  const {
+    published,
+    incomingInterests,
+    loading,
+    error,
+    expressInterest,
+    acceptInterest,
+    rejectInterest,
+    leave,
+    refresh,
+  } = useCommunities();
+  const { selectLocation } = useLocation();
+  const [boardSpace, setBoardSpace] = useState<{ id: string; name: string } | null>(null);
+  const [interestMessage, setInterestMessage] = useState('');
+  const [interestForId, setInterestForId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleInterest = async (spaceId: string) => {
+    setBusyId(spaceId);
+    setActionError(null);
+    try {
+      await expressInterest(spaceId, interestMessage.trim());
+      setInterestForId(null);
+      setInterestMessage('');
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Could not send interest');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <h2 className="font-display text-lg font-semibold flex items-center gap-2">
+          <Globe className="w-4 h-4 text-[#0D9488]" />
+          Communities
+          {published.length > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isDark ? 'bg-white/10 text-white/60' : 'bg-black/5 text-[#6E6A63]'}`}>
+              {published.length}
+            </span>
+          )}
+        </h2>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className={`text-[10px] ${isDark ? 'text-white/40 hover:text-white/70' : 'text-[#6E6A63] hover:text-black'}`}
+        >
+          Refresh
+        </button>
+      </div>
+
+      <p className={`text-[11px] mb-3 ${isDark ? 'text-white/45' : 'text-[#6E6A63]'}`}>
+        Published spaces open to everyone for pilgrimages and shared activity. Send Interest to join; hosts accept members. Decisions happen on the community board.
+      </p>
+
+      {incomingInterests.length > 0 && (
+        <div className="mb-4">
+          <p className={`text-[10px] uppercase tracking-wider font-medium mb-2 ${isDark ? 'text-orange-400' : 'text-orange-600'}`}>
+            Interest requests ({incomingInterests.length})
+          </p>
+          <div className="space-y-1.5">
+            {incomingInterests.map((req) => (
+              <div
+                key={req._id}
+                className={`px-3 py-2 rounded-lg ${isDark ? 'bg-orange-500/10' : 'bg-orange-50'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{req.fromName || req.fromEmail}</p>
+                    <p className={`text-[10px] truncate ${isDark ? 'text-white/40' : 'text-[#6E6A63]'}`}>
+                      wants to join {req.spaceName}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void acceptInterest(req._id)}
+                    className={`w-6 h-6 rounded-md flex items-center justify-center ${isDark ? 'bg-green-500/20 text-green-400' : 'bg-green-50 text-green-600'}`}
+                    title="Accept"
+                  >
+                    <Check className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => void rejectInterest(req._id)}
+                    className={`w-6 h-6 rounded-md flex items-center justify-center ${isDark ? 'bg-red-500/20 text-red-400' : 'bg-red-50 text-red-600'}`}
+                    title="Decline"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+                {req.message ? (
+                  <p className={`text-[10px] mt-1 ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}>{req.message}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(error || actionError) && (
+        <p className="text-[10px] text-red-500 mb-2">{actionError || error}</p>
+      )}
+
+      <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+        {loading && published.length === 0 ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="w-4 h-4 animate-spin opacity-40" />
+          </div>
+        ) : published.length === 0 ? (
+          <p className={`text-[10px] px-3 py-4 text-center border border-dashed rounded-xl ${isDark ? 'border-white/10 text-white/40' : 'border-black/10 text-black/40'}`}>
+            No published communities yet. Publish one of your sacred spaces to invite others.
+          </p>
+        ) : (
+          published.map((c) => (
+            <div
+              key={c._id}
+              className={`rounded-xl border p-3 ${isDark ? 'border-white/10 bg-white/[0.03]' : 'border-[#e5e5e5] bg-black/[0.015]'}`}
+            >
+              <button
+                type="button"
+                onClick={() => selectLocation(c._id)}
+                className="w-full text-left"
+              >
+                <p className="text-sm font-semibold truncate">{c.name}</p>
+                <p className={`text-[10px] mt-0.5 ${isDark ? 'text-white/40' : 'text-[#6E6A63]'}`}>
+                  Host · {c.ownerName} · {c.memberCount} member{c.memberCount === 1 ? '' : 's'}
+                </p>
+              </button>
+              {c.purpose ? (
+                <p className={`text-[11px] mt-2 line-clamp-2 ${isDark ? 'text-white/65' : 'text-[#141414]/75'}`}>
+                  {c.purpose}
+                </p>
+              ) : null}
+
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {(c.isMember || c.isOwner) && (
+                  <button
+                    type="button"
+                    onClick={() => setBoardSpace({ id: c._id, name: c.name })}
+                    className={`text-[10px] px-2 py-1 rounded-md border flex items-center gap-1 ${
+                      isDark
+                        ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/15'
+                        : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/10'
+                    }`}
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    Board
+                  </button>
+                )}
+
+                {!c.isOwner && !c.isMember && c.interestStatus !== 'pending' && (
+                  interestForId === c._id ? (
+                    <div className="w-full space-y-1.5 mt-1">
+                      <input
+                        value={interestMessage}
+                        onChange={(e) => setInterestMessage(e.target.value)}
+                        placeholder="Optional note to the host…"
+                        className={`w-full px-2 py-1.5 rounded-md text-[11px] border outline-none ${
+                          isDark
+                            ? 'bg-white/5 border-white/10 text-white'
+                            : 'bg-white border-black/10'
+                        }`}
+                      />
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          disabled={busyId === c._id}
+                          onClick={() => void handleInterest(c._id)}
+                          className="text-[10px] px-2 py-1 rounded-md bg-[#0D9488] text-white"
+                        >
+                          {busyId === c._id ? 'Sending…' : 'Send Interest'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInterestForId(null)}
+                          className={`text-[10px] px-2 py-1 rounded-md ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setInterestForId(c._id)}
+                      className={`text-[10px] px-2 py-1 rounded-md border flex items-center gap-1 ${
+                        isDark
+                          ? 'border-orange-400/30 text-orange-300 hover:bg-orange-400/10'
+                          : 'border-orange-200 text-orange-700 hover:bg-orange-50'
+                      }`}
+                    >
+                      <HandHeart className="w-3 h-3" />
+                      Interested
+                    </button>
+                  )
+                )}
+
+                {c.interestStatus === 'pending' && !c.isMember && (
+                  <span className={`text-[10px] px-2 py-1 rounded-md ${isDark ? 'bg-orange-500/15 text-orange-300' : 'bg-orange-50 text-orange-700'}`}>
+                    Interest pending
+                  </span>
+                )}
+
+                {c.isMember && !c.isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => void leave(c._id)}
+                    className={`text-[10px] px-2 py-1 rounded-md ${isDark ? 'text-red-300/70 hover:text-red-300' : 'text-red-500/70 hover:text-red-600'}`}
+                  >
+                    Leave
+                  </button>
+                )}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {boardSpace && (
+        <CommunityBoardDialog
+          open={!!boardSpace}
+          onOpenChange={(open) => {
+            if (!open) setBoardSpace(null);
+          }}
+          spaceId={boardSpace.id}
+          spaceName={boardSpace.name}
+        />
+      )}
     </div>
   );
 }

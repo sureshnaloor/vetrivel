@@ -8,6 +8,12 @@ export interface SelectedTemple {
   vicinity?: string;
   rating?: number;
   userRatingsTotal?: number;
+  /** Saved `user_places` document id — enables visit log / media in RightRail */
+  userPlaceId?: string;
+  status?: string;
+  lastVisitDate?: string | null;
+  /** When viewing a friend's nest, label for visit notes (e.g. friend's name) */
+  visitOwnerLabel?: string;
 }
 
 interface SelectedTempleContextType {

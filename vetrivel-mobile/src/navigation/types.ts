@@ -1,6 +1,7 @@
 export type RootStackParamList = {
   Home: undefined;
   Friends: undefined;
+  Communities: undefined;
   CreateSpace: undefined;
   NestDetail: {
     locationId: string;

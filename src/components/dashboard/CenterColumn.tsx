@@ -5,13 +5,15 @@ import { useDashboardPinned } from '../../contexts/DashboardPinnedContext';
 import { useSelectedTemple } from '../../contexts/SelectedTempleContext';
 import { useFriends } from '../../contexts/FriendsContext';
 import { findSpaceContainingPoint, getSpaceMatchDistanceKm, normalizeDocumentId, normalizeLatLng, getDistanceKm } from '../../lib/geo';
-import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2, X, AlertCircle, Map } from 'lucide-react';
+import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2, X, AlertCircle, Map, BookOpen } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { GoogleMap, OverlayView } from '@react-google-maps/api';
 import { fetchPlaces, savePlace, updatePlace, deletePlace, type UserPlace, fetchCustomTemples, createCustomTemple, type CustomTemple } from '../../services/places';
 import { saveLocation } from '../../services/locations';
 import { useAuth } from '../../hooks/useAuth';
+import VisitLogDialog from './VisitLogDialog';
+import { formatVisitDate } from '../../services/placeVisits';
 
 const MAP_STYLES = [
   { featureType: "poi.business", stylers: [{ visibility: "off" }] },
@@ -143,10 +145,25 @@ export default function CenterColumn() {
     distance: number;
     coords: { lat: number, lng: number };
   } | null>(null);
+  const [visitLogPlace, setVisitLogPlace] = useState<UserPlace | null>(null);
 
   // Detect if we are in a friend's nest
   const activeFriendNest = friendNests.find(n => normalizeDocumentId(n._id) === normalizeDocumentId(activeLocationId));
   const isFriendNest = !!activeFriendNest;
+
+  const selectUserPlace = useCallback((place: UserPlace) => {
+    setSelectedTemple({
+      name: place.name,
+      placeId: place.placeId,
+      coordinates: place.coordinates,
+      userPlaceId: place._id,
+      status: place.status,
+      lastVisitDate: place.lastVisitDate,
+      visitOwnerLabel: isFriendNest
+        ? activeFriendNest?.ownerName || "Friend"
+        : undefined,
+    });
+  }, [setSelectedTemple, isFriendNest, activeFriendNest?.ownerName]);
 
   // CSS for Marker Animations
   const markerAnimationStyles = `
@@ -234,6 +251,14 @@ export default function CenterColumn() {
       scrollContainerRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
     }
   };
+
+  const refreshUserPlaces = useCallback(() => {
+    if (!session?.user || !activeLocationId) {
+      setUserPlaces([]);
+      return;
+    }
+    fetchPlaces(activeLocationId).then(setUserPlaces).catch(console.error);
+  }, [session?.user, activeLocationId]);
 
   useEffect(() => {
     console.log('[CenterColumn] session or activeLocationId changed. activeLocationId:', activeLocationId);
@@ -1030,7 +1055,7 @@ export default function CenterColumn() {
                         const isDeselect = selectedTwinkleId === place._id;
                         setSelectedTwinkleId(isDeselect ? null : (place._id || place.name || null));
                         if (isDeselect) { setSelectedTemple(null); } else {
-                          setSelectedTemple({ name: place.name, placeId: place.placeId, coordinates: place.coordinates });
+                          selectUserPlace(place);
                         }
                       }}
                     >
@@ -1226,7 +1251,7 @@ export default function CenterColumn() {
             <div 
                key={i} 
                className={`p-5 rounded-2xl border flex flex-col justify-between min-h-[160px] cursor-pointer transition-transform hover:-translate-y-1 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'} ${selectedTwinkleId === place._id ? 'ring-2 ring-[#0D9488]' : ''}`}
-               onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else setSelectedTemple({ name: place.name, placeId: place.placeId, coordinates: place.coordinates }); }}
+               onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else selectUserPlace(place); }}
             >
               <div>
                 <div className="flex justify-between items-start mb-2">
@@ -1274,7 +1299,30 @@ export default function CenterColumn() {
                   </div>
                 </div>
                 <h3 className="font-semibold text-lg leading-tight line-clamp-2">{place.name}</h3>
+                {place.lastVisitDate && (
+                  <p className={`text-xs mt-2 ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}>
+                    Last visit · {formatVisitDate(place.lastVisitDate)}
+                    {isFriendNest ? ` · ${activeFriendNest?.ownerName || 'Friend'}` : ''}
+                  </p>
+                )}
               </div>
+              {!isFriendNest && place._id && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setVisitLogPlace(place);
+                  }}
+                  className={`mt-3 self-start text-xs font-medium flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors ${
+                    isDark
+                      ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/15'
+                      : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/10'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Log visit
+                </button>
+              )}
             </div>
           ))
         ) : (
@@ -1296,16 +1344,37 @@ export default function CenterColumn() {
             <div 
                key={i} 
                className={`p-4 flex items-center gap-4 rounded-xl border cursor-pointer transition-transform hover:-translate-y-1 ${isDark ? 'border-blue-500/20 bg-blue-500/5' : 'border-blue-500/20 bg-blue-50'} ${selectedTwinkleId === place._id ? 'ring-2 ring-blue-500' : ''}`}
-               onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else setSelectedTemple({ name: place.name, placeId: place.placeId, coordinates: place.coordinates }); }}
+               onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else selectUserPlace(place); }}
             >
               <div className={`w-10 h-10 rounded-full flex flex-shrink-0 items-center justify-center ${isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-white text-blue-500 shadow-sm'}`}>
                 <MapPin className="w-4 h-4" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className={`text-sm font-medium leading-tight line-clamp-2 ${isDark ? 'text-white' : 'text-[#141414]'}`}>{place.name}</p>
+                {place.lastVisitDate && (
+                  <p className={`text-[11px] mt-1 ${isDark ? 'text-white/45' : 'text-[#6E6A63]'}`}>
+                    Last visit · {formatVisitDate(place.lastVisitDate)}
+                    {isFriendNest ? ` · ${activeFriendNest?.ownerName || 'Friend'}` : ''}
+                  </p>
+                )}
                 <div className="flex items-center justify-between gap-2 mt-2">
-                  <span className={`text-[10px] uppercase tracking-wider font-medium text-blue-500`}>Intrigued</span>
+                  <span className={`text-[10px] uppercase tracking-wider font-medium ${place.status === 'visited' ? 'text-green-600' : 'text-blue-500'}`}>
+                    {place.status === 'visited' ? 'Visited' : 'Intrigued'}
+                  </span>
                   <div className="flex items-center gap-1">
+                    {!isFriendNest && place._id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setVisitLogPlace(place);
+                        }}
+                        aria-label="Log visit"
+                        title="Log visit"
+                        className={`w-7 h-7 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/15' : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/10'}`}
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { 
                         e.stopPropagation(); 
@@ -1476,6 +1545,18 @@ export default function CenterColumn() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {visitLogPlace?._id && (
+        <VisitLogDialog
+          open={!!visitLogPlace}
+          onOpenChange={(open) => {
+            if (!open) setVisitLogPlace(null);
+          }}
+          placeDocId={visitLogPlace._id}
+          placeName={visitLogPlace.name}
+          onVisitsChanged={refreshUserPlaces}
+        />
+      )}
     </div>
   );
 }

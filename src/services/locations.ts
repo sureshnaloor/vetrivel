@@ -2,8 +2,11 @@ export interface UserLocation {
   _id?: string;
   userEmail: string;
   name: string;
-  coordinates: { lat: number, lng: number };
+  coordinates: { lat: number; lng: number };
   address: string;
+  visibility?: 'private' | 'published';
+  purpose?: string;
+  publishedAt?: string | null;
   createdAt?: string;
 }
 
@@ -15,7 +18,9 @@ export const fetchLocations = async (): Promise<UserLocation[]> => {
   return res.json();
 };
 
-export const saveLocation = async (location: Omit<UserLocation, '_id' | 'userEmail' | 'createdAt'>): Promise<UserLocation> => {
+export const saveLocation = async (
+  location: Omit<UserLocation, '_id' | 'userEmail' | 'createdAt'>
+): Promise<UserLocation> => {
   const res = await fetch(API_BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -25,6 +30,23 @@ export const saveLocation = async (location: Omit<UserLocation, '_id' | 'userEma
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     throw new Error(errorBody?.error || 'Failed to save location');
+  }
+  return res.json();
+};
+
+export const updateLocation = async (
+  id: string,
+  updates: Partial<Pick<UserLocation, 'name' | 'address' | 'visibility' | 'purpose'>>
+): Promise<UserLocation> => {
+  const res = await fetch(`${API_BASE}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => null);
+    throw new Error(errorBody?.error || 'Failed to update location');
   }
   return res.json();
 };

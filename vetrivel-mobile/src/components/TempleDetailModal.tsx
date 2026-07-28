@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import type {
   GooglePlaceDetails,
+  PlaceVisit,
   TempleContent,
   TempleContentTab,
   TempleRoutes,
@@ -24,7 +25,9 @@ import {
   createTempleContent,
   deleteTempleContent,
   fetchTempleContent,
+  formatVisitDate,
   getPlaceDetails,
+  getPlaceVisits,
   getTempleRoutes,
   getTempleKey,
   updateTempleContent,
@@ -40,6 +43,11 @@ export type TempleDetailSelection = {
   vicinity?: string;
   rating?: number;
   userRatingsTotal?: number;
+  /** Saved user_places id — loads visit journal in Info/Media */
+  userPlaceId?: string | null;
+  status?: string;
+  lastVisitDate?: string | null;
+  visitOwnerLabel?: string;
 };
 
 type Props = {
@@ -91,6 +99,8 @@ export function TempleDetailModal({
   const [submittingUgc, setSubmittingUgc] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState("");
+  const [placeVisits, setPlaceVisits] = useState<PlaceVisit[]>([]);
+  const [loadingVisits, setLoadingVisits] = useState(false);
 
   const templeKey = useMemo(
     () => (temple ? getTempleKey(temple.placeId, temple.name) : ""),
@@ -164,6 +174,53 @@ export function TempleDetailModal({
       cancelled = true;
     };
   }, [visible, templeKey]);
+
+  useEffect(() => {
+    const placeDocId = temple?.userPlaceId;
+    if (!visible || !placeDocId || !accessToken) {
+      setPlaceVisits([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingVisits(true);
+    getPlaceVisits(accessToken, placeDocId)
+      .then((list) => {
+        if (!cancelled) setPlaceVisits(list);
+      })
+      .catch(() => {
+        if (!cancelled) setPlaceVisits([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingVisits(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, temple?.userPlaceId, accessToken]);
+
+  const visitMedia = useMemo(() => {
+    const items: Array<{
+      key: string;
+      mediaUrl: string;
+      mediaType: string;
+      visitDate: string;
+    }> = [];
+    for (const visit of placeVisits) {
+      for (const m of visit.media || []) {
+        items.push({
+          key: `${visit._id}-${m.id}`,
+          mediaUrl: m.mediaUrl,
+          mediaType: m.mediaType,
+          visitDate: visit.visitDate,
+        });
+      }
+    }
+    return items;
+  }, [placeVisits]);
+
+  const visitNotesLabel = temple?.visitOwnerLabel
+    ? `${temple.visitOwnerLabel}'s visits`
+    : "Your visits";
 
   useEffect(() => {
     if (!visible || activeTab !== "routes" || !temple) return;
@@ -602,6 +659,44 @@ export function TempleDetailModal({
                     Photos from Google Places · {googlePhotoUrls.length} shown
                   </Text>
                 ) : null}
+
+                {temple.userPlaceId ? (
+                  <View style={styles.visitBlock}>
+                    <Text style={styles.visitHeading}>
+                      {temple.visitOwnerLabel
+                        ? `${temple.visitOwnerLabel}'s visit media`
+                        : "Visit photos & videos"}
+                    </Text>
+                    {loadingVisits ? (
+                      <ActivityIndicator style={{ marginVertical: 12 }} color="#0D9488" />
+                    ) : visitMedia.length > 0 ? (
+                      <View style={styles.photoGrid}>
+                        {visitMedia.map((item) => (
+                          <View key={item.key} style={styles.photoCell}>
+                            {item.mediaType.startsWith("video/") ? (
+                              <View style={[styles.photoImg, styles.videoThumb]}>
+                                <Text style={styles.videoLabel}>Video</Text>
+                                <Text style={styles.videoDate}>
+                                  {formatVisitDate(item.visitDate)}
+                                </Text>
+                              </View>
+                            ) : (
+                              <Image
+                                source={{ uri: item.mediaUrl }}
+                                style={styles.photoImg}
+                                resizeMode="cover"
+                              />
+                            )}
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={styles.muted}>
+                        No visit photos or videos yet.
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
               </View>
             )}
 
@@ -834,6 +929,40 @@ export function TempleDetailModal({
               </Pressable>
             </View>
             ) : null}
+
+            {activeTab === "info" && temple.userPlaceId ? (
+              <View style={styles.visitBlock}>
+                <Text style={styles.visitHeading}>{visitNotesLabel}</Text>
+                {loadingVisits ? (
+                  <ActivityIndicator style={{ marginVertical: 12 }} color="#0D9488" />
+                ) : placeVisits.length > 0 ? (
+                  placeVisits.map((visit) => (
+                    <View key={visit._id} style={styles.visitCard}>
+                      <Text style={styles.visitDate}>
+                        {formatVisitDate(visit.visitDate)}
+                      </Text>
+                      {visit.remarks ? (
+                        <Text style={styles.visitRemarks}>{visit.remarks}</Text>
+                      ) : (
+                        <Text style={styles.mutedSmall}>No remarks for this visit.</Text>
+                      )}
+                      {(visit.media?.length ?? 0) > 0 ? (
+                        <Text style={styles.mutedSmall}>
+                          {visit.media.length} media item
+                          {visit.media.length === 1 ? "" : "s"} · see Media tab
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.mutedSmall}>
+                    {temple.status === "visited" || temple.lastVisitDate
+                      ? "Marked visited — no detailed visit notes yet."
+                      : "No visits logged for this temple yet."}
+                  </Text>
+                )}
+              </View>
+            ) : null}
           </View>
         </ScrollView>
 
@@ -1005,6 +1134,44 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 8,
   },
+  visitBlock: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#e5e5e5",
+  },
+  visitHeading: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0D9488",
+    marginBottom: 10,
+  },
+  visitCard: {
+    backgroundColor: "rgba(13,148,136,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(13,148,136,0.22)",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  visitDate: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0D9488",
+    marginBottom: 4,
+  },
+  visitRemarks: {
+    fontSize: 14,
+    color: "#333",
+    lineHeight: 20,
+  },
+  videoThumb: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#1a1a1a",
+  },
+  videoLabel: { color: "#fff", fontWeight: "700", fontSize: 12 },
+  videoDate: { color: "rgba(255,255,255,0.6)", fontSize: 10, marginTop: 4 },
   aiBubble: {
     borderWidth: 1,
     borderColor: "rgba(209,59,59,0.35)",

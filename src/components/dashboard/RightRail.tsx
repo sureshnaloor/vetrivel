@@ -3,8 +3,13 @@ import { useSelectedTemple } from '../../contexts/SelectedTempleContext';
 import { useLocation } from '../../contexts/LocationContext';
 import { useAuth } from '../../hooks/useAuth';
 import { fetchTempleContent, createTempleContent, deleteTempleContent, getTempleKey, type TempleContent } from '../../services/templeContent';
-import { MapPin, Info, Clock, Image as ImageIcon, MessageSquare, ExternalLink, Loader2, Trash2, Plus, Navigation as NavIcon, Car, Footprints, Plane, TrainFront } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import {
+  fetchPlaceVisits,
+  formatVisitDate,
+  type PlaceVisit,
+} from '../../services/placeVisits';
+import { MapPin, Info, Clock, Image as ImageIcon, MessageSquare, ExternalLink, Loader2, Trash2, Plus, Navigation as NavIcon, Car, Footprints, Plane, TrainFront, BookOpen } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 
 interface PlaceDetails {
   name?: string;
@@ -49,6 +54,10 @@ export default function RightRail() {
   const [ugcInput, setUgcInput] = useState('');
   const [isSubmittingUgc, setIsSubmittingUgc] = useState(false);
   const [showUgcForm, setShowUgcForm] = useState(false);
+
+  // Personal / friend visit journal for the selected saved temple
+  const [placeVisits, setPlaceVisits] = useState<PlaceVisit[]>([]);
+  const [loadingVisits, setLoadingVisits] = useState(false);
 
   const tabs = [
     { id: 'info', label: 'Info', icon: Info },
@@ -147,6 +156,55 @@ export default function RightRail() {
       setUgcList([]);
     }
   }, [templeKey]);
+
+  // Fetch visit journal when a saved nest/interest temple is selected
+  useEffect(() => {
+    const placeDocId = selectedTemple?.userPlaceId;
+    if (!placeDocId || !session?.user) {
+      setPlaceVisits([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingVisits(true);
+    fetchPlaceVisits(placeDocId)
+      .then((list) => {
+        if (!cancelled) setPlaceVisits(list);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setPlaceVisits([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingVisits(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTemple?.userPlaceId, session?.user]);
+
+  const visitMedia = useMemo(() => {
+    const items: Array<{
+      key: string;
+      mediaUrl: string;
+      mediaType: string;
+      visitDate: string;
+    }> = [];
+    for (const visit of placeVisits) {
+      for (const m of visit.media || []) {
+        items.push({
+          key: `${visit._id}-${m.id}`,
+          mediaUrl: m.mediaUrl,
+          mediaType: m.mediaType,
+          visitDate: visit.visitDate,
+        });
+      }
+    }
+    return items;
+  }, [placeVisits]);
+
+  const visitNotesLabel = selectedTemple?.visitOwnerLabel
+    ? `${selectedTemple.visitOwnerLabel}'s visits`
+    : 'Your visits';
 
   // Fetch Routes when tab is selected
   useEffect(() => {
@@ -569,6 +627,53 @@ export default function RightRail() {
                 )}
                 
                 {renderUgcSection("Community Notes", "Share something about this temple...")}
+
+                {selectedTemple.userPlaceId && (
+                  <div className={`mt-6 pt-6 border-t ${isDark ? 'border-white/10' : 'border-[#e5e5e5]'}`}>
+                    <div className="flex items-center gap-2 mb-4">
+                      <BookOpen className="w-4 h-4 text-[#0D9488]" />
+                      <h3 className="font-medium text-sm">{visitNotesLabel}</h3>
+                    </div>
+                    {loadingVisits ? (
+                      <div className="flex justify-center p-4">
+                        <Loader2 className="w-4 h-4 animate-spin text-[#0D9488]" />
+                      </div>
+                    ) : placeVisits.length > 0 ? (
+                      <div className="space-y-3">
+                        {placeVisits.map((visit) => (
+                          <div
+                            key={String(visit._id)}
+                            className={`p-3 rounded-lg text-sm border ${isDark ? 'bg-[#0D9488]/10 border-[#0D9488]/25' : 'bg-[#0D9488]/5 border-[#0D9488]/20'}`}
+                          >
+                            <p className="text-xs font-semibold text-[#0D9488] mb-1">
+                              {formatVisitDate(visit.visitDate)}
+                            </p>
+                            {visit.remarks ? (
+                              <p className={`whitespace-pre-wrap ${isDark ? 'text-white/80' : 'text-[#141414]/80'}`}>
+                                {visit.remarks}
+                              </p>
+                            ) : (
+                              <p className={`text-xs italic ${isDark ? 'text-white/40' : 'text-black/40'}`}>
+                                No remarks for this visit.
+                              </p>
+                            )}
+                            {(visit.media?.length ?? 0) > 0 && (
+                              <p className={`text-[10px] mt-2 ${isDark ? 'text-white/40' : 'text-black/40'}`}>
+                                {visit.media.length} media item{visit.media.length === 1 ? '' : 's'} · see Media tab
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className={`text-xs ${isDark ? 'text-white/40' : 'text-black/40'}`}>
+                        {selectedTemple.status === 'visited' || selectedTemple.lastVisitDate
+                          ? 'Marked visited — no detailed visit notes yet.'
+                          : 'No visits logged for this temple yet.'}
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -638,6 +743,60 @@ export default function RightRail() {
                 <p className={`text-xs ${isDark ? 'text-white/40' : 'text-black/40'}`}>
                   No photos available for this temple.
                 </p>
+              </div>
+            )}
+
+            {selectedTemple.userPlaceId && (
+              <div className={`mt-6 pt-6 border-t ${isDark ? 'border-white/10' : 'border-[#e5e5e5]'}`}>
+                <div className="flex items-center gap-2 mb-4">
+                  <BookOpen className="w-4 h-4 text-[#0D9488]" />
+                  <h3 className="font-medium text-sm">
+                    {selectedTemple.visitOwnerLabel
+                      ? `${selectedTemple.visitOwnerLabel}'s visit media`
+                      : 'Visit photos & videos'}
+                  </h3>
+                </div>
+                {loadingVisits ? (
+                  <div className="flex justify-center p-4">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#0D9488]" />
+                  </div>
+                ) : visitMedia.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      {visitMedia.map((item) => (
+                        <div
+                          key={item.key}
+                          className={`aspect-square rounded-lg border overflow-hidden relative ${isDark ? 'border-[#0D9488]/30' : 'border-[#0D9488]/25'}`}
+                        >
+                          {item.mediaType.startsWith('video/') ? (
+                            <video
+                              src={item.mediaUrl}
+                              className="w-full h-full object-cover"
+                              controls
+                              preload="metadata"
+                            />
+                          ) : (
+                            <img
+                              src={item.mediaUrl}
+                              alt="Visit media"
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                          <span className="absolute bottom-1 left-1 text-[9px] px-1.5 py-0.5 rounded bg-black/60 text-white">
+                            {formatVisitDate(item.visitDate)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className={`text-[10px] text-center mt-2 ${isDark ? 'text-white/30' : 'text-black/30'}`}>
+                      From visit logs · {visitMedia.length} item{visitMedia.length === 1 ? '' : 's'}
+                    </p>
+                  </>
+                ) : (
+                  <p className={`text-xs ${isDark ? 'text-white/40' : 'text-black/40'}`}>
+                    No visit photos or videos yet. Log a visit to attach media.
+                  </p>
+                )}
               </div>
             )}
             

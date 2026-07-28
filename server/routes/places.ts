@@ -434,7 +434,7 @@ placesRouter.post("/", async (req, res) => {
 placesRouter.patch("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { category, status, locationId } = req.body;
+    const { category, status, locationId, lastVisitDate } = req.body;
     const user = (req as any).user;
     
     const client = await clientPromise;
@@ -444,6 +444,7 @@ placesRouter.patch("/:id", async (req, res) => {
     if (category) updateDoc.category = category;
     if (status) updateDoc.status = status;
     if (locationId !== undefined) updateDoc.locationId = locationId || null;
+    if (lastVisitDate !== undefined) updateDoc.lastVisitDate = lastVisitDate || null;
     updateDoc.updatedAt = new Date();
     
     const result = await db.collection("user_places").findOneAndUpdate(
@@ -485,6 +486,12 @@ placesRouter.delete("/:id", async (req, res) => {
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: "Place not found" });
     }
+
+    // Clean up personal visit logs for this place
+    await db.collection("place_visits").deleteMany({
+      placeDocId: id,
+      userEmail: user.email,
+    });
     
     res.json({ success: true });
   } catch (error) {

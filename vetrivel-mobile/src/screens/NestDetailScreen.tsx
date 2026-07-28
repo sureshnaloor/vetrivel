@@ -13,11 +13,12 @@ import {
   View,
 } from "react-native";
 import type { NearbyTemple, UserPlace } from "../api";
-import { createPlace, getPlacesForLocation, searchNearbyTemples } from "../api";
+import { createPlace, formatVisitDate, getPlacesForLocation, searchNearbyTemples } from "../api";
 import {
   TempleDetailModal,
   type TempleDetailSelection,
 } from "../components/TempleDetailModal";
+import { VisitLogModal } from "../components/VisitLogModal";
 import { SpaceMap } from "../components/SpaceMap";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -28,12 +29,19 @@ type Props = NavProps & {
   userEmail: string;
 };
 
-function userPlaceToDetail(p: UserPlace): TempleDetailSelection {
+function userPlaceToDetail(
+  p: UserPlace,
+  visitOwnerLabel?: string
+): TempleDetailSelection {
   return {
     placeId: p.placeId || null,
     name: p.name,
     lat: p.coordinates.lat,
     lng: p.coordinates.lng,
+    userPlaceId: p._id,
+    status: p.status,
+    lastVisitDate: p.lastVisitDate,
+    visitOwnerLabel,
   };
 }
 
@@ -52,27 +60,38 @@ function nearbyToDetail(t: NearbyTemple): TempleDetailSelection {
 function PlaceCard({
   place,
   onOpenDetail,
+  onLogVisit,
   highlighted,
 }: {
   place: UserPlace;
   onOpenDetail?: () => void;
+  onLogVisit?: () => void;
   highlighted?: boolean;
 }) {
   return (
-    <Pressable
-      onPress={onOpenDetail}
+    <View
       style={[
         styles.placeCard,
         highlighted && styles.placeCardSelected,
       ]}
     >
-      <Text style={styles.placeName}>{place.name}</Text>
-      <Text style={styles.placeMeta}>
-        {place.status || "—"}
-        {place.placeId ? " · Google place" : ""}
-        {onOpenDetail ? " · Tap for details" : ""}
-      </Text>
-    </Pressable>
+      <Pressable onPress={onOpenDetail} disabled={!onOpenDetail}>
+        <Text style={styles.placeName}>{place.name}</Text>
+        <Text style={styles.placeMeta}>
+          {place.status || "—"}
+          {place.lastVisitDate
+            ? ` · Last visit ${formatVisitDate(place.lastVisitDate)}`
+            : ""}
+          {place.placeId ? " · Google place" : ""}
+          {onOpenDetail ? " · Tap for details" : ""}
+        </Text>
+      </Pressable>
+      {onLogVisit ? (
+        <Pressable onPress={onLogVisit} style={styles.logVisitBtn}>
+          <Text style={styles.logVisitBtnText}>Log visit</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -82,6 +101,7 @@ function Section({
   places,
   emptyLabel,
   onOpenPlace,
+  onLogVisit,
   selectedMarkerId,
 }: {
   title: string;
@@ -89,6 +109,7 @@ function Section({
   places: UserPlace[];
   emptyLabel: string;
   onOpenPlace?: (p: UserPlace) => void;
+  onLogVisit?: (p: UserPlace) => void;
   selectedMarkerId?: string | null;
 }) {
   return (
@@ -105,6 +126,7 @@ function Section({
             onOpenDetail={
               onOpenPlace ? () => onOpenPlace(p) : undefined
             }
+            onLogVisit={onLogVisit ? () => onLogVisit(p) : undefined}
             highlighted={
               selectedMarkerId === `saved-${p._id}`
             }
@@ -137,6 +159,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   const [detailTemple, setDetailTemple] = useState<TempleDetailSelection | null>(
     null
   );
+  const [visitLogPlace, setVisitLogPlace] = useState<UserPlace | null>(null);
 
   const loadPlaces = useCallback(
     async (opts?: { refresh?: boolean; silent?: boolean }) => {
@@ -296,8 +319,13 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   }, [loadNearby, searchInput]);
 
   const openSavedPlaceDetail = useCallback((p: UserPlace) => {
-    setDetailTemple(userPlaceToDetail(p));
-  }, []);
+    setDetailTemple(
+      userPlaceToDetail(
+        p,
+        isFriendNest ? ownerName || "Friend" : undefined
+      )
+    );
+  }, [isFriendNest, ownerName]);
 
   const openNearbyDetail = useCallback((t: NearbyTemple) => {
     setDetailTemple(nearbyToDetail(t));
@@ -308,7 +336,14 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
       if (markerId.startsWith("saved-")) {
         const id = markerId.slice("saved-".length);
         const p = places.find((x) => x._id === id);
-        if (p) setDetailTemple(userPlaceToDetail(p));
+        if (p) {
+          setDetailTemple(
+            userPlaceToDetail(
+              p,
+              isFriendNest ? ownerName || "Friend" : undefined
+            )
+          );
+        }
         return;
       }
       if (markerId.startsWith("near-")) {
@@ -317,7 +352,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
         if (t) setDetailTemple(nearbyToDetail(t));
       }
     },
-    [places, nearby]
+    [places, nearby, isFriendNest, ownerName]
   );
 
   const detailMarkerId = useMemo(() => {
@@ -392,6 +427,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
               : "No nest temples yet — add from Nearby below or create manually."
           }
           onOpenPlace={openSavedPlaceDetail}
+          onLogVisit={isFriendNest ? undefined : setVisitLogPlace}
           selectedMarkerId={detailMarkerId}
         />
 
@@ -400,6 +436,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
           places={interestTemples}
           emptyLabel="No temples of interest yet."
           onOpenPlace={openSavedPlaceDetail}
+          onLogVisit={isFriendNest ? undefined : setVisitLogPlace}
           selectedMarkerId={detailMarkerId}
         />
 
@@ -410,6 +447,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
             places={pins}
             emptyLabel=""
             onOpenPlace={openSavedPlaceDetail}
+            onLogVisit={isFriendNest ? undefined : setVisitLogPlace}
             selectedMarkerId={detailMarkerId}
           />
         ) : null}
@@ -507,6 +545,19 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
         accessToken={accessToken}
         userEmail={userEmail}
       />
+
+      {visitLogPlace ? (
+        <VisitLogModal
+          visible
+          onClose={() => setVisitLogPlace(null)}
+          accessToken={accessToken}
+          placeDocId={visitLogPlace._id}
+          placeName={visitLogPlace.name}
+          onVisitsChanged={() => {
+            void loadPlaces({ silent: true });
+          }}
+        />
+      ) : null}
 
       <Modal visible={manualOpen} animationType="slide" transparent>
         <View style={styles.modalBackdrop}>
@@ -648,6 +699,19 @@ const styles = StyleSheet.create({
   },
   placeName: { fontSize: 15, fontWeight: "600" },
   placeMeta: { fontSize: 12, color: "#666", marginTop: 4 },
+  logVisitBtn: {
+    alignSelf: "flex-start",
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(13,148,136,0.12)",
+  },
+  logVisitBtnText: {
+    color: "#0D9488",
+    fontWeight: "700",
+    fontSize: 12,
+  },
   searchRow: { flexDirection: "row", gap: 8, marginBottom: 12, alignItems: "center" },
   searchInput: {
     flex: 1,

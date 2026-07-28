@@ -7,6 +7,8 @@ import { placesRouter } from "./routes/places";
 import { customTemplesRouter } from "./routes/customTemples";
 import { locationsRouter } from "./routes/locations";
 import { templeContentRouter } from "./routes/templeContent";
+import { placeVisitsRouter } from "./routes/placeVisits";
+import { communitiesRouter } from "./routes/communities";
 import { mobileAuthRouter } from "./routes/mobileAuth";
 import { friendsRouter } from "./routes/friends";
 
@@ -45,6 +47,12 @@ app.use("/api/custom-temples", customTemplesRouter);
 
 // Temple Community Content (UGC) route
 app.use("/api/temple-content", templeContentRouter);
+
+// Personal visit logs (date, remarks, photos/videos) for nest / interest temples
+app.use("/api/place-visits", placeVisitsRouter);
+
+// Published spaces / community interest / board
+app.use("/api/communities", communitiesRouter);
 
 // Friends & Social
 app.use("/api/friends", friendsRouter);
