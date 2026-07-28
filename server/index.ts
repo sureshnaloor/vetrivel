@@ -9,6 +9,7 @@ import { locationsRouter } from "./routes/locations";
 import { templeContentRouter } from "./routes/templeContent";
 import { placeVisitsRouter } from "./routes/placeVisits";
 import { communitiesRouter } from "./routes/communities";
+import { leaderboardRouter } from "./routes/leaderboard";
 import { mobileAuthRouter } from "./routes/mobileAuth";
 import { friendsRouter } from "./routes/friends";
 
@@ -53,6 +54,9 @@ app.use("/api/place-visits", placeVisitsRouter);
 
 // Published spaces / community interest / board
 app.use("/api/communities", communitiesRouter);
+
+// Bucket-list leaderboard (overall + per space)
+app.use("/api/leaderboard", leaderboardRouter);
 
 // Friends & Social
 app.use("/api/friends", friendsRouter);

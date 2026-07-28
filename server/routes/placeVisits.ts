@@ -185,6 +185,54 @@ async function markPlaceVisited(db: Db, placeDocId: ObjectId, visitDate: string)
   );
 }
 
+function visitHasMeaningfulDetails(visit: {
+  remarks?: unknown;
+  media?: Array<unknown>;
+}): boolean {
+  const remarks =
+    typeof visit.remarks === "string" ? visit.remarks.trim() : "";
+  const mediaCount = Array.isArray(visit.media) ? visit.media.length : 0;
+  return remarks.length > 0 || mediaCount > 0;
+}
+
+async function syncPlaceVisitSummary(
+  db: Db,
+  placeDocId: string,
+  ownerEmail: string
+) {
+  if (!ObjectId.isValid(placeDocId)) return;
+
+  const visits = await db
+    .collection("place_visits")
+    .find({ placeDocId, userEmail: ownerEmail })
+    .sort({ visitDate: -1, createdAt: -1 })
+    .toArray();
+
+  const latestVisitDate =
+    typeof visits[0]?.visitDate === "string" ? visits[0].visitDate : null;
+  const hasVisitDetails = visits.some((visit) =>
+    visitHasMeaningfulDetails({
+      remarks: visit.remarks,
+      media: Array.isArray(visit.media) ? visit.media : [],
+    })
+  );
+
+  await db.collection("user_places").updateOne(
+    { _id: new ObjectId(placeDocId), userEmail: ownerEmail },
+    {
+      $set: {
+        updatedAt: new Date(),
+        hasVisitDetails,
+        visitLogCount: visits.length,
+        ...(latestVisitDate
+          ? { status: "visited", lastVisitDate: latestVisitDate }
+          : {}),
+      },
+      ...(latestVisitDate ? {} : { $unset: { lastVisitDate: "" } }),
+    }
+  );
+}
+
 // GET /api/place-visits?placeDocId=...
 // Owner: full journal. Friends viewing a followed nest: read-only visit logs.
 placeVisitsRouter.get("/", async (req, res) => {
@@ -272,6 +320,7 @@ placeVisitsRouter.post("/", async (req, res) => {
 
     const result = await db.collection("place_visits").insertOne(newVisit);
     await markPlaceVisited(db, place._id, date);
+    await syncPlaceVisitSummary(db, placeDocId, user.email);
 
     res.json({ _id: result.insertedId, ...newVisit });
   } catch (error) {
@@ -324,6 +373,7 @@ placeVisitsRouter.patch("/:id", async (req, res) => {
     const visit = doc as { placeDocId?: string; visitDate?: string };
     if (visit.placeDocId && visit.visitDate && ObjectId.isValid(visit.placeDocId)) {
       await markPlaceVisited(db, new ObjectId(visit.placeDocId), visit.visitDate);
+      await syncPlaceVisitSummary(db, visit.placeDocId, user.email);
     }
 
     res.json(doc);
@@ -378,6 +428,12 @@ placeVisitsRouter.post("/:id/media", async (req, res) => {
       return res.status(404).json({ error: "Visit not found" });
     }
 
+    await syncPlaceVisitSummary(
+      db,
+      String((doc as { placeDocId?: string }).placeDocId || ""),
+      user.email
+    );
+
     res.json(doc);
   } catch (error) {
     console.error("Error adding visit media:", error);
@@ -416,6 +472,12 @@ placeVisitsRouter.delete("/:id/media/:mediaId", async (req, res) => {
       return res.status(404).json({ error: "Visit not found" });
     }
 
+    await syncPlaceVisitSummary(
+      db,
+      String((doc as { placeDocId?: string }).placeDocId || ""),
+      user.email
+    );
+
     res.json(doc);
   } catch (error) {
     console.error("Error deleting visit media:", error);
@@ -447,34 +509,8 @@ placeVisitsRouter.delete("/:id", async (req, res) => {
 
     await db.collection("place_visits").deleteOne({ _id: existing._id });
 
-    // If no visits remain, leave status as visited (user still marked it);
-    // refresh lastVisitDate from newest remaining visit if any.
     const placeDocId = existing.placeDocId as string;
-    if (placeDocId && ObjectId.isValid(placeDocId)) {
-      const latest = await db
-        .collection("place_visits")
-        .find({ placeDocId, userEmail: user.email })
-        .sort({ visitDate: -1, createdAt: -1 })
-        .limit(1)
-        .toArray();
-
-      if (latest[0]?.visitDate) {
-        await db.collection("user_places").updateOne(
-          { _id: new ObjectId(placeDocId), userEmail: user.email },
-          {
-            $set: {
-              lastVisitDate: latest[0].visitDate,
-              updatedAt: new Date(),
-            },
-          }
-        );
-      } else {
-        await db.collection("user_places").updateOne(
-          { _id: new ObjectId(placeDocId), userEmail: user.email },
-          { $unset: { lastVisitDate: "" }, $set: { updatedAt: new Date() } }
-        );
-      }
-    }
+    await syncPlaceVisitSummary(db, placeDocId, user.email);
 
     res.json({ success: true });
   } catch (error) {

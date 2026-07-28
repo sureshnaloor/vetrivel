@@ -11,6 +11,7 @@ import { MapPin, UserPlus, Check, X, Trash2, Link2, Copy, ChevronDown, ChevronUp
 import { getDistanceKm, normalizeDocumentId } from '../../lib/geo';
 import PublishSpaceDialog from './PublishSpaceDialog';
 import CommunityBoardDialog from './CommunityBoardDialog';
+import LeaderboardWidget from './LeaderboardWidget';
 
 export default function LeftRail() {
   const { theme } = useTheme();
@@ -131,6 +132,8 @@ export default function LeftRail() {
           </div>
         )}
       </div>
+
+      <LeaderboardWidget isDark={isDark} />
 
       {/* Workspaces Section */}
       <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>

@@ -1,5 +1,6 @@
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import * as Location from "expo-location";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,8 +13,14 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { NearbyTemple, UserPlace } from "../api";
-import { createPlace, formatVisitDate, getPlacesForLocation, searchNearbyTemples } from "../api";
+import type { NearbyTemple, UserPlace, LeaderboardRank } from "../api";
+import {
+  createPlace,
+  formatVisitDate,
+  getLeaderboard,
+  getPlacesForLocation,
+  searchNearbyTemples,
+} from "../api";
 import {
   TempleDetailModal,
   type TempleDetailSelection,
@@ -57,6 +64,22 @@ function nearbyToDetail(t: NearbyTemple): TempleDetailSelection {
   };
 }
 
+function getDistanceMeters(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number }
+): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const earthRadiusM = 6371000;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadiusM * Math.asin(Math.sqrt(h));
+}
+
 function PlaceCard({
   place,
   onOpenDetail,
@@ -68,27 +91,34 @@ function PlaceCard({
   onLogVisit?: () => void;
   highlighted?: boolean;
 }) {
+  const isVisited = place.status === "visited";
+  const visitCtaLabel = place.hasVisitDetails ? "Previous visit" : "Log visit";
   return (
     <View
       style={[
         styles.placeCard,
+        isVisited && styles.placeCardVisited,
         highlighted && styles.placeCardSelected,
       ]}
     >
+      {isVisited ? (
+        <View style={styles.visitedBadge}>
+          <Text style={styles.visitedBadgeText}>✓ VISITED</Text>
+        </View>
+      ) : null}
       <Pressable onPress={onOpenDetail} disabled={!onOpenDetail}>
         <Text style={styles.placeName}>{place.name}</Text>
         <Text style={styles.placeMeta}>
-          {place.status || "—"}
+          {!isVisited ? place.status || "—" : ""}
           {place.lastVisitDate
-            ? ` · Last visit ${formatVisitDate(place.lastVisitDate)}`
+            ? `${isVisited ? "" : " · "}Last visit ${formatVisitDate(place.lastVisitDate)}`
             : ""}
-          {place.placeId ? " · Google place" : ""}
           {onOpenDetail ? " · Tap for details" : ""}
         </Text>
       </Pressable>
       {onLogVisit ? (
         <Pressable onPress={onLogVisit} style={styles.logVisitBtn}>
-          <Text style={styles.logVisitBtnText}>Log visit</Text>
+          <Text style={styles.logVisitBtnText}>{visitCtaLabel}</Text>
         </Pressable>
       ) : null}
     </View>
@@ -159,7 +189,21 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   const [detailTemple, setDetailTemple] = useState<TempleDetailSelection | null>(
     null
   );
-  const [visitLogPlace, setVisitLogPlace] = useState<UserPlace | null>(null);
+  const [visitLogTarget, setVisitLogTarget] = useState<{
+    place: UserPlace;
+    initialView: "log" | "history";
+  } | null>(null);
+
+  const openVisitLog = (place: UserPlace) => {
+    setVisitLogTarget({
+      place,
+      initialView: place.hasVisitDetails ? "history" : "log",
+    });
+  };
+  const [boardScope, setBoardScope] = useState<"overall" | "space">("space");
+  const [boardRows, setBoardRows] = useState<LeaderboardRank[]>([]);
+  const [boardLoading, setBoardLoading] = useState(false);
+  const nearTemplePromptAttemptedRef = useRef(false);
 
   const loadPlaces = useCallback(
     async (opts?: { refresh?: boolean; silent?: boolean }) => {
@@ -216,15 +260,107 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
     loadPlaces();
   }, [loadPlaces]);
 
+  const loadBoard = useCallback(async () => {
+    setBoardLoading(true);
+    try {
+      const data = await getLeaderboard(
+        accessToken,
+        boardScope,
+        boardScope === "space" ? locationId : undefined
+      );
+      setBoardRows(data.rankings);
+    } catch {
+      setBoardRows([]);
+    } finally {
+      setBoardLoading(false);
+    }
+  }, [accessToken, boardScope, locationId]);
+
+  useEffect(() => {
+    void loadBoard();
+  }, [loadBoard]);
+
   useEffect(() => {
     loadNearby();
   }, [loadNearby]);
 
-  const { nestTemples, interestTemples, pins } = useMemo(() => {
+  useEffect(() => {
+    if (loading || isFriendNest || nearTemplePromptAttemptedRef.current) return;
+    nearTemplePromptAttemptedRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (cancelled || status !== "granted") return;
+
+      try {
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+
+        const current = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
+        const results = await searchNearbyTemples(accessToken, {
+          lat: current.lat,
+          lng: current.lng,
+          radiusMeters: 500,
+        });
+        if (cancelled) return;
+
+        const candidate = results
+          .filter(
+            (t) =>
+              t.placeId &&
+              !savedPlaceIds.has(t.placeId) &&
+              Number.isFinite(t.lat) &&
+              Number.isFinite(t.lng)
+          )
+          .map((t) => ({
+            temple: t,
+            distanceMeters: getDistanceMeters(current, { lat: t.lat, lng: t.lng }),
+          }))
+          .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+
+        if (!candidate || candidate.distanceMeters > 500) return;
+
+        Alert.alert(
+          "Temple nearby",
+          `You seem to be near "${candidate.temple.name}" (${Math.round(
+            candidate.distanceMeters
+          )} m away). Add it to this space?`,
+          [
+            { text: "Ignore", style: "cancel" },
+            {
+              text: "Add as interest",
+              onPress: () => {
+                void addNearby(candidate.temple, "interest");
+              },
+            },
+            {
+              text: "Add as nest",
+              onPress: () => {
+                void addNearby(candidate.temple, "nest");
+              },
+            },
+          ]
+        );
+      } catch {
+        /* best-effort prompt only */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, addNearby, isFriendNest, loading, savedPlaceIds]);
+
+  const { nestTemples, interestTemples } = useMemo(() => {
     const nestTemples = places.filter((p) => p.category === "nest");
     const interestTemples = places.filter((p) => p.category === "interest");
-    const pins = places.filter((p) => p.category === "pin");
-    return { nestTemples, interestTemples, pins };
+    return { nestTemples, interestTemples };
   }, [places]);
 
   const savedPlaceIds = useMemo(() => {
@@ -417,6 +553,59 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
+        <View style={styles.boardBox}>
+          <Text style={styles.boardTitle}>Bucket list board</Text>
+          <View style={styles.boardTabs}>
+            <Pressable
+              style={[styles.boardTab, boardScope === "space" && styles.boardTabOn]}
+              onPress={() => setBoardScope("space")}
+            >
+              <Text
+                style={[
+                  styles.boardTabText,
+                  boardScope === "space" && styles.boardTabTextOn,
+                ]}
+              >
+                This space
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.boardTab, boardScope === "overall" && styles.boardTabOn]}
+              onPress={() => setBoardScope("overall")}
+            >
+              <Text
+                style={[
+                  styles.boardTabText,
+                  boardScope === "overall" && styles.boardTabTextOn,
+                ]}
+              >
+                Overall
+              </Text>
+            </Pressable>
+          </View>
+          {boardLoading ? (
+            <ActivityIndicator style={{ marginVertical: 8 }} />
+          ) : boardRows.length === 0 ? (
+            <Text style={styles.sectionEmpty}>No rankings yet.</Text>
+          ) : (
+            boardRows.slice(0, 5).map((row, idx) => (
+              <View
+                key={row.email}
+                style={[styles.boardRow, row.isSelf && styles.boardRowSelf]}
+              >
+                <Text style={styles.boardRank}>{idx + 1}</Text>
+                <Text style={styles.boardName} numberOfLines={1}>
+                  {row.name}
+                  {row.isSelf ? " · you" : ""}
+                </Text>
+                <Text style={styles.boardScore}>
+                  {row.visited}/{row.total || "—"} · {row.completionPct}%
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+
         <Section
           title="Nest temples"
           subtitle="Anchor temples for this space"
@@ -427,7 +616,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
               : "No nest temples yet — add from Nearby below or create manually."
           }
           onOpenPlace={openSavedPlaceDetail}
-          onLogVisit={isFriendNest ? undefined : setVisitLogPlace}
+          onLogVisit={isFriendNest ? undefined : openVisitLog}
           selectedMarkerId={detailMarkerId}
         />
 
@@ -436,21 +625,9 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
           places={interestTemples}
           emptyLabel="No temples of interest yet."
           onOpenPlace={openSavedPlaceDetail}
-          onLogVisit={isFriendNest ? undefined : setVisitLogPlace}
+          onLogVisit={isFriendNest ? undefined : openVisitLog}
           selectedMarkerId={detailMarkerId}
         />
-
-        {pins.length > 0 ? (
-          <Section
-            title="Explorer pins"
-            subtitle="Pins linked to this space"
-            places={pins}
-            emptyLabel=""
-            onOpenPlace={openSavedPlaceDetail}
-            onLogVisit={isFriendNest ? undefined : setVisitLogPlace}
-            selectedMarkerId={detailMarkerId}
-          />
-        ) : null}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Nearby (Google)</Text>
@@ -546,13 +723,15 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
         userEmail={userEmail}
       />
 
-      {visitLogPlace ? (
+      {visitLogTarget ? (
         <VisitLogModal
           visible
-          onClose={() => setVisitLogPlace(null)}
+          onClose={() => setVisitLogTarget(null)}
           accessToken={accessToken}
-          placeDocId={visitLogPlace._id}
-          placeName={visitLogPlace.name}
+          placeDocId={visitLogTarget.place._id}
+          placeName={visitLogTarget.place.name}
+          placeId={visitLogTarget.place.placeId}
+          initialView={visitLogTarget.initialView}
           onVisitsChanged={() => {
             void loadPlaces({ silent: true });
           }}
@@ -685,6 +864,51 @@ const styles = StyleSheet.create({
     color: "#888",
     fontStyle: "italic",
   },
+  boardBox: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#e8e8e8",
+    padding: 12,
+    marginBottom: 14,
+  },
+  boardTitle: { fontSize: 15, fontWeight: "700", marginBottom: 8 },
+  boardTabs: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  boardTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#f3f3f3",
+    alignItems: "center",
+  },
+  boardTabOn: { backgroundColor: "rgba(13,148,136,0.15)" },
+  boardTabText: { fontSize: 12, fontWeight: "600", color: "#666" },
+  boardTabTextOn: { color: "#0D9488" },
+  boardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+  },
+  boardRowSelf: {
+    backgroundColor: "#FFFBEB",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+  },
+  boardRank: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    overflow: "hidden",
+    textAlign: "center",
+    lineHeight: 22,
+    fontSize: 12,
+    fontWeight: "800",
+    backgroundColor: "#fde68a",
+    color: "#78350f",
+  },
+  boardName: { flex: 1, fontSize: 13, fontWeight: "600" },
+  boardScore: { fontSize: 12, color: "#0D9488", fontWeight: "700" },
   placeCard: {
     borderWidth: 1,
     borderColor: "#e8e8e8",
@@ -693,9 +917,27 @@ const styles = StyleSheet.create({
     marginTop: 8,
     backgroundColor: "#fff",
   },
+  placeCardVisited: {
+    borderColor: "#34d399",
+    backgroundColor: "#ecfdf5",
+  },
   placeCardSelected: {
     borderColor: "#D13B3B",
     borderWidth: 2,
+  },
+  visitedBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#10b981",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: 8,
+  },
+  visitedBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.6,
   },
   placeName: { fontSize: 15, fontWeight: "600" },
   placeMeta: { fontSize: 12, color: "#666", marginTop: 4 },

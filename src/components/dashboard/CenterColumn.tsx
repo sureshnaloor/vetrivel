@@ -145,11 +145,18 @@ export default function CenterColumn() {
     distance: number;
     coords: { lat: number, lng: number };
   } | null>(null);
-  const [visitLogPlace, setVisitLogPlace] = useState<UserPlace | null>(null);
+  const [visitLogTarget, setVisitLogTarget] = useState<{
+    place: UserPlace;
+    initialView: 'log' | 'history';
+  } | null>(null);
 
   // Detect if we are in a friend's nest
   const activeFriendNest = friendNests.find(n => normalizeDocumentId(n._id) === normalizeDocumentId(activeLocationId));
   const isFriendNest = !!activeFriendNest;
+
+  const getVisitCtaLabel = useCallback((place: UserPlace) => {
+    return place.hasVisitDetails ? 'Previous visit' : 'Log visit';
+  }, []);
 
   const selectUserPlace = useCallback((place: UserPlace) => {
     setSelectedTemple({
@@ -1250,13 +1257,25 @@ export default function CenterColumn() {
           userPlaces.filter(p => p.category === 'nest').map((place, i) => (
             <div 
                key={i} 
-               className={`p-5 rounded-2xl border flex flex-col justify-between min-h-[160px] cursor-pointer transition-transform hover:-translate-y-1 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'} ${selectedTwinkleId === place._id ? 'ring-2 ring-[#0D9488]' : ''}`}
+               className={`p-5 rounded-2xl border flex flex-col justify-between min-h-[160px] cursor-pointer transition-transform hover:-translate-y-1 ${
+                 place.status === 'visited'
+                   ? (isDark
+                       ? 'bg-emerald-500/10 border-emerald-400/40 shadow-[0_0_0_1px_rgba(52,211,153,0.15)]'
+                       : 'bg-emerald-50 border-emerald-300 shadow-sm shadow-emerald-100')
+                   : (isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm')
+               } ${selectedTwinkleId === place._id ? 'ring-2 ring-[#0D9488]' : ''}`}
                onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else selectUserPlace(place); }}
             >
               <div>
                 <div className="flex justify-between items-start mb-2">
                   {place.status === 'visited' ? (
-                     <span className={`flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-medium bg-green-500/10 text-green-600 dark:text-green-400`}>✓ Visited</span>
+                     <span className={`inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wide px-3 py-1 rounded-full font-bold shadow-sm ${
+                       isDark
+                         ? 'bg-emerald-400 text-emerald-950'
+                         : 'bg-emerald-500 text-white'
+                     }`}>
+                       <span className="text-sm leading-none">✓</span> Visited
+                     </span>
                   ) : place.status === 'planned' ? (
                      <span className={`flex items-center gap-1 text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-medium ${isDark ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-50 text-orange-600'}`}>📍 Planned</span>
                   ) : (
@@ -1311,7 +1330,10 @@ export default function CenterColumn() {
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setVisitLogPlace(place);
+                    setVisitLogTarget({
+                      place,
+                      initialView: place.hasVisitDetails ? 'history' : 'log',
+                    });
                   }}
                   className={`mt-3 self-start text-xs font-medium flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border transition-colors ${
                     isDark
@@ -1320,7 +1342,7 @@ export default function CenterColumn() {
                   }`}
                 >
                   <BookOpen className="w-3.5 h-3.5" />
-                  Log visit
+                  {getVisitCtaLabel(place)}
                 </button>
               )}
             </div>
@@ -1343,11 +1365,25 @@ export default function CenterColumn() {
           userPlaces.filter(p => p.category === 'interest').map((place, i) => (
             <div 
                key={i} 
-               className={`p-4 flex items-center gap-4 rounded-xl border cursor-pointer transition-transform hover:-translate-y-1 ${isDark ? 'border-blue-500/20 bg-blue-500/5' : 'border-blue-500/20 bg-blue-50'} ${selectedTwinkleId === place._id ? 'ring-2 ring-blue-500' : ''}`}
+               className={`p-4 flex items-center gap-4 rounded-xl border cursor-pointer transition-transform hover:-translate-y-1 ${
+                 place.status === 'visited'
+                   ? (isDark
+                       ? 'border-emerald-400/40 bg-emerald-500/10'
+                       : 'border-emerald-300 bg-emerald-50')
+                   : (isDark ? 'border-blue-500/20 bg-blue-500/5' : 'border-blue-500/20 bg-blue-50')
+               } ${selectedTwinkleId === place._id ? 'ring-2 ring-blue-500' : ''}`}
                onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else selectUserPlace(place); }}
             >
-              <div className={`w-10 h-10 rounded-full flex flex-shrink-0 items-center justify-center ${isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-white text-blue-500 shadow-sm'}`}>
-                <MapPin className="w-4 h-4" />
+              <div className={`w-10 h-10 rounded-full flex flex-shrink-0 items-center justify-center ${
+                place.status === 'visited'
+                  ? (isDark ? 'bg-emerald-400 text-emerald-950' : 'bg-emerald-500 text-white shadow-sm')
+                  : (isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-white text-blue-500 shadow-sm')
+              }`}>
+                {place.status === 'visited' ? (
+                  <span className="font-bold text-lg">✓</span>
+                ) : (
+                  <MapPin className="w-4 h-4" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className={`text-sm font-medium leading-tight line-clamp-2 ${isDark ? 'text-white' : 'text-[#141414]'}`}>{place.name}</p>
@@ -1358,18 +1394,29 @@ export default function CenterColumn() {
                   </p>
                 )}
                 <div className="flex items-center justify-between gap-2 mt-2">
-                  <span className={`text-[10px] uppercase tracking-wider font-medium ${place.status === 'visited' ? 'text-green-600' : 'text-blue-500'}`}>
-                    {place.status === 'visited' ? 'Visited' : 'Intrigued'}
-                  </span>
+                  {place.status === 'visited' ? (
+                    <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full font-bold ${
+                      isDark ? 'bg-emerald-400 text-emerald-950' : 'bg-emerald-500 text-white'
+                    }`}>
+                      ✓ Visited
+                    </span>
+                  ) : (
+                    <span className={`text-[10px] uppercase tracking-wider font-medium text-blue-500`}>
+                      Intrigued
+                    </span>
+                  )}
                   <div className="flex items-center gap-1">
                     {!isFriendNest && place._id && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setVisitLogPlace(place);
+                          setVisitLogTarget({
+                      place,
+                      initialView: place.hasVisitDetails ? 'history' : 'log',
+                    });
                         }}
-                        aria-label="Log visit"
-                        title="Log visit"
+                        aria-label={getVisitCtaLabel(place)}
+                        title={getVisitCtaLabel(place)}
                         className={`w-7 h-7 rounded-lg border transition-colors flex items-center justify-center ${isDark ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/15' : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/10'}`}
                       >
                         <BookOpen className="w-3.5 h-3.5" />
@@ -1546,14 +1593,16 @@ export default function CenterColumn() {
         </DialogContent>
       </Dialog>
 
-      {visitLogPlace?._id && (
+      {visitLogTarget?.place._id && (
         <VisitLogDialog
-          open={!!visitLogPlace}
+          open={!!visitLogTarget}
           onOpenChange={(open) => {
-            if (!open) setVisitLogPlace(null);
+            if (!open) setVisitLogTarget(null);
           }}
-          placeDocId={visitLogPlace._id}
-          placeName={visitLogPlace.name}
+          placeDocId={visitLogTarget.place._id}
+          placeName={visitLogTarget.place.name}
+          placeId={visitLogTarget.place.placeId}
+          initialView={visitLogTarget.initialView}
           onVisitsChanged={refreshUserPlaces}
         />
       )}

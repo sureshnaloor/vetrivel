@@ -95,6 +95,8 @@ export type UserPlace = {
   category: UserPlaceCategory;
   status: string;
   lastVisitDate?: string | null;
+  hasVisitDetails?: boolean;
+  visitLogCount?: number;
 };
 
 export async function exchangeGoogleIdToken(
@@ -351,6 +353,8 @@ function mapPlaceRow(row: Record<string, unknown>): UserPlace | null {
       row.lastVisitDate != null && row.lastVisitDate !== ""
         ? String(row.lastVisitDate)
         : null,
+    hasVisitDetails: Boolean(row.hasVisitDetails),
+    visitLogCount: Number(row.visitLogCount ?? 0),
   };
 }
 
@@ -746,6 +750,59 @@ export function formatVisitDate(isoDate: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+export type LeaderboardRank = {
+  email: string;
+  name: string;
+  visited: number;
+  total: number;
+  completionPct: number;
+  isSelf: boolean;
+};
+
+export type LeaderboardResponse = {
+  scope: "overall" | "space";
+  locationId?: string;
+  spaceName?: string;
+  rankings: LeaderboardRank[];
+};
+
+export async function getLeaderboard(
+  accessToken: string,
+  scope: "overall" | "space" = "overall",
+  locationId?: string
+): Promise<LeaderboardResponse> {
+  const { data } = await api.get("/api/leaderboard", {
+    headers: authHeaders(accessToken),
+    params: {
+      scope,
+      ...(scope === "space" && locationId ? { locationId } : {}),
+    },
+  });
+  const raw = data as {
+    scope?: string;
+    locationId?: string;
+    spaceName?: string;
+    rankings?: Array<Record<string, unknown>>;
+  };
+  return {
+    scope: raw.scope === "space" ? "space" : "overall",
+    locationId: raw.locationId,
+    spaceName: raw.spaceName,
+    rankings: (raw.rankings || []).map((r) => ({
+      email: String(r.email ?? ""),
+      name: String(r.name ?? ""),
+      visited: Number(r.visited) || 0,
+      total: Number(r.total) || 0,
+      completionPct: Number(r.completionPct) || 0,
+      isSelf: Boolean(r.isSelf),
+    })),
+  };
+}
+
+export function googleMapsWriteReviewUrl(placeId: string): string {
+  return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}`;
 }
 
 /** Update / publish a sacred space */

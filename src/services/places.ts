@@ -8,6 +8,10 @@ export interface UserPlace {
   status: 'planned' | 'visited' | 'recommended' | 'wishlist' | 'place of interest';
   /** YYYY-MM-DD of most recent logged visit, if any */
   lastVisitDate?: string | null;
+  /** True when at least one saved visit includes remarks or media */
+  hasVisitDetails?: boolean;
+  /** Count of saved visit log entries */
+  visitLogCount?: number;
   createdAt?: Date;
 }
 

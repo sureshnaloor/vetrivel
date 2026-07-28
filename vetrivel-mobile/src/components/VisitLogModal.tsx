@@ -4,9 +4,11 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -20,10 +22,13 @@ import {
   formatVisitDate,
   getApiErrorMessage,
   getPlaceVisits,
+  googleMapsWriteReviewUrl,
   todayDateInputValue,
   type PlaceVisit,
   type VisitMediaSource,
 } from "../api";
+
+type VisitLogView = "log" | "history";
 
 type Props = {
   visible: boolean;
@@ -31,6 +36,8 @@ type Props = {
   accessToken: string;
   placeDocId: string;
   placeName: string;
+  placeId?: string | null;
+  initialView?: VisitLogView;
   onVisitsChanged?: () => void;
 };
 
@@ -46,6 +53,8 @@ export function VisitLogModal({
   accessToken,
   placeDocId,
   placeName,
+  placeId,
+  initialView = "log",
   onVisitsChanged,
 }: Props) {
   const [visits, setVisits] = useState<PlaceVisit[]>([]);
@@ -55,6 +64,7 @@ export function VisitLogModal({
   const [remarks, setRemarks] = useState("");
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [busyMediaVisitId, setBusyMediaVisitId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<VisitLogView>(initialView);
 
   const loadVisits = useCallback(async () => {
     if (!placeDocId) return;
@@ -71,11 +81,12 @@ export function VisitLogModal({
 
   useEffect(() => {
     if (!visible) return;
+    setActiveView(initialView);
     setVisitDate(todayDateInputValue());
     setRemarks("");
     setPendingMedia([]);
     void loadVisits();
-  }, [visible, loadVisits]);
+  }, [visible, initialView, loadVisits]);
 
   const ingestAssets = async (
     assets: ImagePicker.ImagePickerAsset[],
@@ -223,6 +234,7 @@ export function VisitLogModal({
       setVisitDate(todayDateInputValue());
       await loadVisits();
       onVisitsChanged?.();
+      setActiveView("history");
       Alert.alert("Visit logged", "Marked as visited with your notes and media.");
     } catch (e) {
       Alert.alert("Could not save", getApiErrorMessage(e));
@@ -263,11 +275,115 @@ export function VisitLogModal({
     })();
   };
 
+  const shareToGoogleMaps = async (visit: PlaceVisit) => {
+    if (!placeId) {
+      Alert.alert(
+        "No Google Place",
+        "This temple was saved without a Google Place ID, so Maps review cannot be opened."
+      );
+      return;
+    }
+    const text = [
+      `Visit to ${placeName}`,
+      visit.visitDate ? `Date: ${formatVisitDate(visit.visitDate)}` : "",
+      visit.remarks?.trim() || "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
+    try {
+      if (text) {
+        await Share.share({ message: text });
+      }
+    } catch {
+      /* user cancelled share sheet — still open Maps */
+    }
+
+    const url = googleMapsWriteReviewUrl(placeId);
+    const can = await Linking.canOpenURL(url);
+    if (can) {
+      await Linking.openURL(url);
+    } else {
+      Alert.alert("Could not open Google Maps", url);
+      return;
+    }
+    Alert.alert(
+      "Google Maps review",
+      "Your remarks were offered in the share sheet. Paste them into the Maps review and attach photos there — Google does not allow apps to post reviews automatically."
+    );
+  };
+
+  const pastVisitsList = (
+    <>
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 12 }} />
+      ) : visits.length === 0 ? (
+        <Text style={styles.hint}>No visits logged yet.</Text>
+      ) : (
+        visits.map((v) => (
+          <View key={v._id} style={styles.visitCard}>
+            <View style={styles.row}>
+              <Text style={styles.visitDate}>{formatVisitDate(v.visitDate)}</Text>
+              <Pressable onPress={() => handleDeleteVisit(v._id)}>
+                <Text style={styles.deleteText}>Delete</Text>
+              </Pressable>
+            </View>
+            {v.remarks ? (
+              <Text style={styles.visitRemarks}>{v.remarks}</Text>
+            ) : (
+              <Text style={styles.hint}>No remarks</Text>
+            )}
+            {v.media?.length > 0 ? (
+              <ScrollView horizontal style={styles.mediaRow}>
+                {v.media.map((m) => (
+                  <Pressable
+                    key={m.id}
+                    onLongPress={() => handleDeleteMedia(v._id, m.id)}
+                    style={styles.thumbWrap}
+                  >
+                    {m.mediaType.startsWith("video/") ? (
+                      <View style={[styles.thumb, styles.videoThumb]}>
+                        <Text style={styles.videoLabel}>Video</Text>
+                      </View>
+                    ) : (
+                      <Image source={{ uri: m.mediaUrl }} style={styles.thumb} />
+                    )}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
+            <Pressable
+              disabled={busyMediaVisitId === v._id}
+              onPress={() => chooseAddMedia(v._id)}
+              style={styles.linkBtn}
+            >
+              <Text style={styles.linkBtnText}>
+                {busyMediaVisitId === v._id
+                  ? "Uploading…"
+                  : "Add photo, video, or camera"}
+              </Text>
+            </Pressable>
+            {placeId ? (
+              <Pressable
+                onPress={() => void shareToGoogleMaps(v)}
+                style={styles.linkBtn}
+              >
+                <Text style={styles.linkBtnText}>Share to Google Maps</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ))
+      )}
+    </>
+  );
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.sheet}>
         <View style={styles.header}>
-          <Text style={styles.title}>Visit log</Text>
+          <Text style={styles.title}>
+            {activeView === "history" ? "Previous visits" : "Visit log"}
+          </Text>
           <Pressable onPress={onClose} hitSlop={12}>
             <Text style={styles.close}>Close</Text>
           </Pressable>
@@ -280,120 +396,95 @@ export function VisitLogModal({
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.label}>Visit date (YYYY-MM-DD)</Text>
-          <TextInput
-            style={styles.input}
-            value={visitDate}
-            onChangeText={setVisitDate}
-            placeholder="2026-07-27"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-
-          <Text style={styles.label}>Remarks</Text>
-          <TextInput
-            style={[styles.input, styles.remarks]}
-            value={remarks}
-            onChangeText={setRemarks}
-            placeholder="What stood out on this visit?"
-            multiline
-            textAlignVertical="top"
-          />
-
-          <Text style={styles.label}>Photos & videos</Text>
-          <View style={styles.mediaActions}>
-            <Pressable
-              onPress={() => void captureWithCamera(null)}
-              style={styles.secondaryBtn}
-            >
-              <Text style={styles.secondaryBtnText}>Take photo / video</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void pickFromLibrary(null)}
-              style={styles.linkBtnInline}
-            >
-              <Text style={styles.linkBtnText}>From library</Text>
-            </Pressable>
-          </View>
-          {pendingMedia.length > 0 ? (
-            <Text style={styles.hint}>
-              {pendingMedia.length} file{pendingMedia.length === 1 ? "" : "s"} ready
-              to attach on save
-              {pendingMedia.some((m) => m.source === "camera")
-                ? " (includes camera captures)"
-                : ""}
-              .
-            </Text>
+          {activeView === "history" ? (
+            <>
+              {pastVisitsList}
+              <Pressable
+                style={styles.primaryBtn}
+                onPress={() => setActiveView("log")}
+              >
+                <Text style={styles.primaryBtnText}>Log another visit</Text>
+              </Pressable>
+            </>
           ) : (
-            <Text style={styles.hint}>
-              Capture at the temple or pick from your library. Keep photos small
-              (~2MB) and videos under ~30s.
-            </Text>
-          )}
-
-          <Pressable
-            style={[styles.primaryBtn, saving && styles.primaryBtnDisabled]}
-            disabled={saving}
-            onPress={() => void handleSave()}
-          >
-            {saving ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.primaryBtnText}>Log visit</Text>
-            )}
-          </Pressable>
-
-          <Text style={[styles.label, { marginTop: 24 }]}>Past visits</Text>
-          {loading ? (
-            <ActivityIndicator style={{ marginTop: 12 }} />
-          ) : visits.length === 0 ? (
-            <Text style={styles.hint}>No visits logged yet.</Text>
-          ) : (
-            visits.map((v) => (
-              <View key={v._id} style={styles.visitCard}>
-                <View style={styles.row}>
-                  <Text style={styles.visitDate}>{formatVisitDate(v.visitDate)}</Text>
-                  <Pressable onPress={() => handleDeleteVisit(v._id)}>
-                    <Text style={styles.deleteText}>Delete</Text>
-                  </Pressable>
-                </View>
-                {v.remarks ? (
-                  <Text style={styles.visitRemarks}>{v.remarks}</Text>
-                ) : (
-                  <Text style={styles.hint}>No remarks</Text>
-                )}
-                {v.media?.length > 0 ? (
-                  <ScrollView horizontal style={styles.mediaRow}>
-                    {v.media.map((m) => (
-                      <Pressable
-                        key={m.id}
-                        onLongPress={() => handleDeleteMedia(v._id, m.id)}
-                        style={styles.thumbWrap}
-                      >
-                        {m.mediaType.startsWith("video/") ? (
-                          <View style={[styles.thumb, styles.videoThumb]}>
-                            <Text style={styles.videoLabel}>Video</Text>
-                          </View>
-                        ) : (
-                          <Image source={{ uri: m.mediaUrl }} style={styles.thumb} />
-                        )}
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                ) : null}
+            <>
+              {visits.length > 0 ? (
                 <Pressable
-                  disabled={busyMediaVisitId === v._id}
-                  onPress={() => chooseAddMedia(v._id)}
+                  onPress={() => setActiveView("history")}
                   style={styles.linkBtn}
                 >
                   <Text style={styles.linkBtnText}>
-                    {busyMediaVisitId === v._id
-                      ? "Uploading…"
-                      : "Add photo, video, or camera"}
+                    View previous visits ({visits.length})
                   </Text>
                 </Pressable>
+              ) : null}
+
+              <Text style={styles.label}>Visit date (YYYY-MM-DD)</Text>
+              <TextInput
+                style={styles.input}
+                value={visitDate}
+                onChangeText={setVisitDate}
+                placeholder="2026-07-27"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+
+              <Text style={styles.label}>Remarks</Text>
+              <TextInput
+                style={[styles.input, styles.remarks]}
+                value={remarks}
+                onChangeText={setRemarks}
+                placeholder="What stood out on this visit?"
+                multiline
+                textAlignVertical="top"
+              />
+
+              <Text style={styles.label}>Photos & videos</Text>
+              <View style={styles.mediaActions}>
+                <Pressable
+                  onPress={() => void captureWithCamera(null)}
+                  style={styles.secondaryBtn}
+                >
+                  <Text style={styles.secondaryBtnText}>Take photo / video</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void pickFromLibrary(null)}
+                  style={styles.linkBtnInline}
+                >
+                  <Text style={styles.linkBtnText}>From library</Text>
+                </Pressable>
               </View>
-            ))
+              {pendingMedia.length > 0 ? (
+                <Text style={styles.hint}>
+                  {pendingMedia.length} file{pendingMedia.length === 1 ? "" : "s"} ready
+                  to attach on save
+                  {pendingMedia.some((m) => m.source === "camera")
+                    ? " (includes camera captures)"
+                    : ""}
+                  .
+                </Text>
+              ) : (
+                <Text style={styles.hint}>
+                  Capture at the temple or pick from your library. Keep photos small
+                  (~2MB) and videos under ~30s.
+                </Text>
+              )}
+
+              <Pressable
+                style={[styles.primaryBtn, saving && styles.primaryBtnDisabled]}
+                disabled={saving}
+                onPress={() => void handleSave()}
+              >
+                {saving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Log visit</Text>
+                )}
+              </Pressable>
+
+              <Text style={[styles.label, { marginTop: 24 }]}>Past visits</Text>
+              {pastVisitsList}
+            </>
           )}
         </ScrollView>
       </View>
