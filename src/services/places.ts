@@ -12,7 +12,7 @@ export interface UserPlace {
   hasVisitDetails?: boolean;
   /** Count of saved visit log entries */
   visitLogCount?: number;
-  createdAt?: Date;
+  address?: string;
 }
 
 // const API_BASE = 'http://localhost:3000/api/places';

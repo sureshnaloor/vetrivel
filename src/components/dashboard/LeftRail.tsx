@@ -7,7 +7,7 @@ import { useFriends } from '../../contexts/FriendsContext';
 import { useCommunities } from '../../contexts/CommunitiesContext';
 import { fetchPlaces, type UserPlace } from '../../services/places';
 import type { UserLocation } from '../../services/locations';
-import { MapPin, UserPlus, Check, X, Trash2, Link2, Copy, ChevronDown, ChevronUp, Loader2, Users, Globe, MessageSquare, HandHeart } from 'lucide-react';
+import { MapPin, UserPlus, Check, X, Trash2, Link2, Copy, ChevronDown, ChevronUp, Loader2, Users, Globe, MessageSquare, HandHeart, List } from 'lucide-react';
 import { getDistanceKm, normalizeDocumentId } from '../../lib/geo';
 import PublishSpaceDialog from './PublishSpaceDialog';
 import CommunityBoardDialog from './CommunityBoardDialog';
@@ -137,6 +137,34 @@ export default function LeftRail() {
 
       {/* Workspaces Section */}
       <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+        <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
+          <List className="w-4 h-4 text-[#0D9488]" /> Divya Desams
+        </h2>
+        <div className="space-y-2 mb-4">
+          <a
+            href="/nests"
+            className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3 ${
+              isDark
+                ? 'text-white/70 hover:bg-white/5 hover:text-white'
+                : 'text-[#6E6A63] hover:bg-black/5 hover:text-black'
+            }`}
+          >
+            <List className="w-4 h-4 flex-shrink-0 opacity-40" />
+            <span className="truncate">Explore Lists</span>
+          </a>
+          <a
+            href="/dashboard/divyadesams"
+            className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3 ${
+              isDark
+                ? 'text-white/70 hover:bg-white/5 hover:text-white'
+                : 'text-[#6E6A63] hover:bg-black/5 hover:text-black'
+            }`}
+          >
+            <List className="w-4 h-4 flex-shrink-0 opacity-40" />
+            <span className="truncate">My Tracked Lists</span>
+          </a>
+        </div>
+
         <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
           <MapPin className="w-4 h-4 text-[#0D9488]" /> My sacred spaces
         </h2>
