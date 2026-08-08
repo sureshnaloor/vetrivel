@@ -372,6 +372,9 @@ placesRouter.get("/", async (req, res) => {
       } else {
         return res.status(404).json({ error: "Location not found" });
       }
+    } else if (req.query.all === "true") {
+      // Fetch ALL places for user
+      query = { userEmail: user.email };
     } else {
       // Fetch user's root places (no locationId)
       query = { userEmail: user.email, locationId: { $in: [null, ""] } };

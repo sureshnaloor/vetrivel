@@ -14,6 +14,16 @@ import DivyaDesamFormDialog from '../components/dashboard/DivyaDesamFormDialog';
 import TempleDetailDialog from '../components/dashboard/TempleDetailDialog';
 import VisitLogDialog from '../components/dashboard/VisitLogDialog';
 import { formatVisitDate } from '../services/placeVisits';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
+import { Button } from '../components/ui/button';
+import { Textarea } from '../components/ui/textarea';
 
 export default function DivyaDesamDetail() {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +55,33 @@ export default function DivyaDesamDetail() {
     place: UserPlace;
     initialView: 'log' | 'history';
   } | null>(null);
+
+  const [isAiPromptOpen, setIsAiPromptOpen] = useState(false);
+  const [aiPromptText, setAiPromptText] = useState('');
+  const [isGeneratingAi, setIsGeneratingAi] = useState(false);
+
+  const handleGenerateAiIcon = async () => {
+    if (!aiPromptText.trim() || !list) return;
+    setIsGeneratingAi(true);
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/ai/generate-svg`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listId: list._id, prompt: aiPromptText }),
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error('Failed to generate SVG');
+      const data = await res.json();
+      setList({ ...list, iconSvg: data.iconSvg });
+      setIsAiPromptOpen(false);
+      setAiPromptText('');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to generate AI icon. Ensure backend is running and API key is set.');
+    } finally {
+      setIsGeneratingAi(false);
+    }
+  };
 
   const refreshUserPlaces = () => {
     fetchPlaces().then(userPlaces => {
@@ -273,6 +310,14 @@ export default function DivyaDesamDetail() {
         <header className="mb-10 flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-3">
+              {list.iconSvg && (
+                <div 
+                  className={`w-12 h-12 flex items-center justify-center rounded-2xl shrink-0 [&>svg]:w-7 [&>svg]:h-7 [&>svg]:fill-current ${
+                    isDark ? 'bg-white/10 text-[#0D9488]' : 'bg-[#0D9488]/10 text-[#0D9488]'
+                  }`}
+                  dangerouslySetInnerHTML={{ __html: list.iconSvg }}
+                />
+              )}
               <h1 className="font-display text-4xl font-semibold">{list.name}</h1>
               {list.isPublished && (
                 <span className={`text-[10px] uppercase tracking-wider px-2 py-1 rounded font-semibold ${isDark ? 'bg-[#0D9488]/20 text-[#2DD4BF]' : 'bg-[#0D9488]/15 text-[#0D9488]'}`}>
@@ -299,15 +344,27 @@ export default function DivyaDesamDetail() {
             </div>
           </div>
           
+         {/* Header Actions */}
+        <div className="flex flex-row md:flex-col gap-2 shrink-0">
           {isOwner && (
-            <div className="flex flex-row md:flex-col gap-2 shrink-0">
-              <button 
+            <>
+              <button
+                onClick={() => setIsAiPromptOpen(true)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-black/5 hover:bg-black/10'
+                }`}
+              >
+                <Sparkles className="w-4 h-4" />
+                AI Icon
+              </button>
+              <button
                 onClick={() => setIsEditOpen(true)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-black/5 hover:bg-black/10'
                 }`}
               >
-                <Edit2 className="w-4 h-4" /> Edit List
+                <Edit2 className="w-4 h-4" />
+                Edit List
               </button>
               <button 
                 onClick={handleDeleteList}
@@ -317,8 +374,9 @@ export default function DivyaDesamDetail() {
               >
                 <Trash2 className="w-4 h-4" /> Delete List
               </button>
-            </div>
+            </>
           )}
+        </div>
         </header>
 
         <div className="space-y-4">
@@ -504,15 +562,25 @@ export default function DivyaDesamDetail() {
                   </div>
 
                   {/* Temple Details */}
-                  <div className="mb-6">
-                    <h3 className={`font-semibold text-xl ${isDark ? 'text-white' : 'text-[#141414]'}`}>
-                      {temple.name}
-                    </h3>
-                    {isVisited && userPlace?.lastVisitDate && (
-                      <p className={`text-sm mt-1 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
-                        Last visit · {formatVisitDate(userPlace.lastVisitDate)}
-                      </p>
+                  <div className="mb-6 flex items-start gap-4">
+                    {list.iconSvg && (
+                      <div 
+                        className={`w-10 h-10 flex items-center justify-center rounded-xl shrink-0 [&>svg]:w-6 [&>svg]:h-6 [&>svg]:fill-current ${
+                          isDark ? 'bg-white/10 text-[#0D9488]' : 'bg-[#0D9488]/10 text-[#0D9488]'
+                        }`}
+                        dangerouslySetInnerHTML={{ __html: list.iconSvg }}
+                      />
                     )}
+                    <div>
+                      <h3 className={`font-semibold text-xl ${isDark ? 'text-white' : 'text-[#141414]'}`}>
+                        {temple.name}
+                      </h3>
+                      {isVisited && userPlace?.lastVisitDate && (
+                        <p className={`text-sm mt-1 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
+                          Last visit · {formatVisitDate(userPlace.lastVisitDate)}
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Bottom Action */}
@@ -558,6 +626,36 @@ export default function DivyaDesamDetail() {
           onVisitsChanged={refreshUserPlaces}
         />
       )}
+
+      {/* AI Icon Generator Dialog */}
+      <Dialog open={isAiPromptOpen} onOpenChange={setIsAiPromptOpen}>
+        <DialogContent className={`sm:max-w-[425px] ${isDark ? 'bg-[#1a1b23] text-white border-white/10' : 'bg-white text-black'}`}>
+          <DialogHeader>
+            <DialogTitle>Generate AI Icon</DialogTitle>
+            <DialogDescription className={isDark ? 'text-white/60' : 'text-[#6E6A63]'}>
+              Describe the icon you want for this list (e.g. "A minimalist Murugan Vel" or "A simple Hindu temple outline").
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Textarea
+              placeholder="Enter your prompt here..."
+              value={aiPromptText}
+              onChange={(e) => setAiPromptText(e.target.value)}
+              className={isDark ? 'bg-black/20 border-white/10 text-white' : ''}
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAiPromptOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleGenerateAiIcon} disabled={isGeneratingAi || !aiPromptText.trim()} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {isGeneratingAi ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              Generate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

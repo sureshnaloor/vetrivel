@@ -17,8 +17,13 @@ export interface UserPlace {
 
 // const API_BASE = 'http://localhost:3000/api/places';
 const API_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/api/places`;
-export const fetchPlaces = async (locationId?: string): Promise<UserPlace[]> => {
-  const url = locationId ? `${API_BASE}?locationId=${locationId}` : API_BASE;
+export const fetchPlaces = async (locationId?: string, all: boolean = false): Promise<UserPlace[]> => {
+  let url = API_BASE;
+  if (all) {
+    url += '?all=true';
+  } else if (locationId) {
+    url += `?locationId=${locationId}`;
+  }
   const res = await fetch(url, {credentials: 'include'});
   if (!res.ok) throw new Error('Failed to fetch user places');
   return res.json();

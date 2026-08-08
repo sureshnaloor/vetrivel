@@ -13,6 +13,7 @@ import { leaderboardRouter } from "./routes/leaderboard";
 import { mobileAuthRouter } from "./routes/mobileAuth";
 import { friendsRouter } from "./routes/friends";
 import { divyadesamRouter } from "./routes/divyadesam";
+import { aiRouter } from "./routes/ai";
 
 dotenv.config();
 
@@ -64,6 +65,7 @@ app.use("/api/friends", friendsRouter);
 
 // Curated Lists (Divya Desams, Char Dham, etc.)
 app.use("/api/divyadesam", divyadesamRouter);
+app.use("/api/ai", aiRouter);
 
 // A test endpoint
 app.get("/api/hello", (req, res) => {

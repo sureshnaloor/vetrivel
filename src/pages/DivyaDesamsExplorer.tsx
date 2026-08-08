@@ -70,7 +70,14 @@ export default function DivyaDesamsExplorer() {
                 <div key={list._id} className={`p-6 rounded-2xl border flex flex-col h-full ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-3">
-                      <List className="w-5 h-5 text-[#0D9488]" />
+                      {list.iconSvg ? (
+                        <div
+                          className="w-5 h-5 flex items-center justify-center shrink-0 [&>svg]:w-5 [&>svg]:h-5 [&>svg]:fill-current text-[#0D9488]"
+                          dangerouslySetInnerHTML={{ __html: list.iconSvg }}
+                        />
+                      ) : (
+                        <List className="w-5 h-5 text-[#0D9488]" />
+                      )}
                       <h2 className="font-display text-xl font-semibold">{list.name}</h2>
                     </div>
                     <div className="flex flex-wrap gap-2 mb-3">

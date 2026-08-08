@@ -15,6 +15,7 @@ export interface DivyaDesamList {
   isGlobalTemplate: boolean;
   isPublished: boolean;
   parentListId: string | null;
+  iconSvg?: string;
   temples: TempleListItem[];
   createdAt: string;
   updatedAt: string;

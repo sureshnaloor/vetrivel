@@ -11,6 +11,7 @@ import CenterColumn from '../components/dashboard/CenterColumn';
 import RightRail from '../components/dashboard/RightRail';
 import DashboardFooter from '../components/dashboard/DashboardFooter';
 import LocationSelector from '../components/dashboard/LocationSelector';
+import NearbySuggestionWidget from '../components/dashboard/NearbySuggestionWidget';
 import { DashboardPinnedProvider } from '../contexts/DashboardPinnedContext';
 import { SelectedTempleProvider } from '../contexts/SelectedTempleContext';
 
@@ -129,6 +130,11 @@ export default function Dashboard() {
 
         </div>
       </main>
+
+      {/* Floating Nearby Widget */}
+      <div className="fixed bottom-6 right-6 z-50 max-w-sm w-full">
+        <NearbySuggestionWidget />
+      </div>
 
       {/* Dashboard Specific Footer */}
       <DashboardFooter />

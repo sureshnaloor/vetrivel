@@ -85,7 +85,14 @@ export default function MyDivyaDesams() {
                     <div className="flex-1">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          <List className="w-5 h-5 text-[#0D9488]" />
+                          {list.iconSvg ? (
+                            <div
+                              className="w-5 h-5 flex items-center justify-center shrink-0 [&>svg]:w-5 [&>svg]:h-5 [&>svg]:fill-current text-[#0D9488]"
+                              dangerouslySetInnerHTML={{ __html: list.iconSvg }}
+                            />
+                          ) : (
+                            <List className="w-5 h-5 text-[#0D9488]" />
+                          )}
                           <h2 className="font-display text-xl font-semibold">{list.name}</h2>
                         </div>
                         <ChevronRight className="w-5 h-5 opacity-40" />
