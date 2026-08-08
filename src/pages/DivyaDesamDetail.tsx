@@ -4,14 +4,16 @@ import Navigation from '../components/Navigation';
 import { useTheme } from '../hooks/useTheme';
 import { fetchListDetails } from '../services/divyadesam';
 import type { DivyaDesamList } from '../services/divyadesam';
-import { fetchPlaces, type UserPlace } from '../services/places';
+import { fetchPlaces, savePlace, type UserPlace } from '../services/places';
 import { useAuth } from '../hooks/useAuth';
-import { ArrowLeft, MapPin, CheckCircle2, Circle, Loader2, Edit2, Trash2, Search, X } from 'lucide-react';
-import { useDashboardPinned } from '../contexts/DashboardPinnedContext';
+import { ArrowLeft, Loader2, Edit2, Trash2, Search, BookOpen, Sparkles, Map as MapIcon } from 'lucide-react';
 import { useLocation } from '../contexts/LocationContext';
 import { useDivyaDesam } from '../contexts/DivyaDesamContext';
 import { Autocomplete } from '@react-google-maps/api';
 import DivyaDesamFormDialog from '../components/dashboard/DivyaDesamFormDialog';
+import TempleDetailDialog from '../components/dashboard/TempleDetailDialog';
+import VisitLogDialog from '../components/dashboard/VisitLogDialog';
+import { formatVisitDate } from '../services/placeVisits';
 
 export default function DivyaDesamDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,16 +22,16 @@ export default function DivyaDesamDetail() {
   const isDark = theme === 'dark';
   const { session } = useAuth();
   const user = session?.user;
-  const { setPinToAssign } = useDashboardPinned();
   const { isLoaded } = useLocation();
   const { updateList, deleteList } = useDivyaDesam();
 
   const [list, setList] = useState<DivyaDesamList | null>(null);
-  const [visitedPlaceIds, setVisitedPlaceIds] = useState<Set<string>>(new Set());
+  const [userPlacesMap, setUserPlacesMap] = useState<Map<string, UserPlace>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [selectedTempleDialog, setSelectedTempleDialog] = useState<any | null>(null);
   const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [addMode, setAddMode] = useState<'search' | 'manual'>('search');
@@ -38,6 +40,23 @@ export default function DivyaDesamDetail() {
   const [manualLng, setManualLng] = useState('');
   const [manualAddress, setManualAddress] = useState('');
   const [manualSaving, setManualSaving] = useState(false);
+  
+  const [visitLogTarget, setVisitLogTarget] = useState<{
+    place: UserPlace;
+    initialView: 'log' | 'history';
+  } | null>(null);
+
+  const refreshUserPlaces = () => {
+    fetchPlaces().then(userPlaces => {
+      const map = new Map<string, UserPlace>();
+      userPlaces.forEach((p: UserPlace) => {
+        if (p.placeId) {
+          map.set(p.placeId, p);
+        }
+      });
+      setUserPlacesMap(map);
+    });
+  };
 
   useEffect(() => {
     if (!id || !user) return;
@@ -49,14 +68,13 @@ export default function DivyaDesamDetail() {
     ]).then(([listData, userPlaces]) => {
       setList(listData);
       
-      // Calculate which temples are visited by matching placeId
-      const visitedIds = new Set<string>();
+      const map = new Map<string, UserPlace>();
       userPlaces.forEach((p: UserPlace) => {
-        if (p.status === 'visited' && p.placeId) {
-          visitedIds.add(p.placeId);
+        if (p.placeId) {
+          map.set(p.placeId, p);
         }
       });
-      setVisitedPlaceIds(visitedIds);
+      setUserPlacesMap(map);
     }).catch(err => {
       setError(err.message || 'Failed to load details');
     }).finally(() => {
@@ -65,17 +83,7 @@ export default function DivyaDesamDetail() {
   }, [id, user]);
 
   const handleTempleClick = (temple: any) => {
-    // If we want them to mark it as visited, we should direct them to the map or dashboard pin assignment.
-    // Setting pinToAssign allows the dashboard map to focus on it and the user can add it to their space.
-    setPinToAssign({
-      name: temple.name,
-      placeId: temple.placeId,
-      coordinates: temple.coordinates,
-      address: temple.address,
-      category: 'pin',
-      status: 'planned'
-    });
-    navigate('/dashboard');
+    setSelectedTempleDialog(temple);
   };
 
   const handleRemoveTemple = async (placeId: string) => {
@@ -100,6 +108,52 @@ export default function DivyaDesamDetail() {
         console.error(err);
         alert('Failed to delete list');
       }
+    }
+  };
+
+  const handleLogVisit = async (temple: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    let place = userPlacesMap.get(temple.placeId);
+    if (!place) {
+      try {
+        place = await savePlace({
+          placeId: temple.placeId,
+          name: temple.name,
+          coordinates: temple.coordinates,
+          category: 'nest',
+          status: 'planned',
+          address: temple.address
+        });
+        refreshUserPlaces();
+      } catch (err) {
+        console.error(err);
+        alert('Failed to save place for logging visit');
+        return;
+      }
+    }
+    setVisitLogTarget({ place, initialView: place.hasVisitDetails ? 'history' : 'log' });
+  };
+
+  const handleAddInterest = async (temple: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (userPlacesMap.has(temple.placeId)) {
+      alert('Temple is already in your tracked places.');
+      return;
+    }
+    try {
+      await savePlace({
+        placeId: temple.placeId,
+        name: temple.name,
+        coordinates: temple.coordinates,
+        category: 'interest',
+        status: 'place of interest',
+        address: temple.address
+      });
+      refreshUserPlaces();
+      alert('Added to your Interests!');
+    } catch (err) {
+      console.error(err);
+      alert('Failed to add to Interests');
     }
   };
 
@@ -198,7 +252,7 @@ export default function DivyaDesamDetail() {
     );
   }
 
-  const visitedCount = list.temples.filter(t => visitedPlaceIds.has(t.placeId)).length;
+  const visitedCount = list.temples.filter(t => userPlacesMap.get(t.placeId)?.status === 'visited').length;
   const totalCount = list.temples.length;
   const progressPercent = totalCount > 0 ? (visitedCount / totalCount) * 100 : 0;
 
@@ -390,49 +444,89 @@ export default function DivyaDesamDetail() {
 
           <div className="grid gap-4">
             {list.temples.map((temple, idx) => {
-              const isVisited = visitedPlaceIds.has(temple.placeId);
+              const userPlace = userPlacesMap.get(temple.placeId);
+              const isVisited = userPlace?.status === 'visited';
+              const hasVisitDetails = userPlace?.hasVisitDetails;
               
               return (
                 <div
                   key={idx}
-                  className={`flex items-center gap-4 p-4 rounded-xl border text-left transition-all group ${
-                    isDark 
-                      ? 'bg-[#131418] border-white/10 hover:border-white/30' 
-                      : 'bg-white border-[#e5e5e5] hover:border-black/30'
+                  className={`relative p-5 rounded-3xl border transition-all ${
+                    isVisited 
+                      ? (isDark ? 'bg-emerald-500/10 border-emerald-400/40' : 'bg-[#e6ffea] border-emerald-300')
+                      : (isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]')
                   }`}
                 >
-                  <button onClick={() => handleTempleClick(temple)} className="flex items-center justify-center w-8 h-8 shrink-0">
-                    <div className={`flex items-center justify-center w-full h-full rounded-full transition-colors ${
-                      isVisited 
-                        ? 'bg-green-500/20 text-green-500' 
-                        : isDark ? 'bg-white/5 text-white/40 group-hover:text-white' : 'bg-black/5 text-black/40 group-hover:text-black'
-                    }`}>
-                      {isVisited ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+                  <div className="flex justify-between items-start mb-4">
+                    {/* Badge */}
+                    <div>
+                      {isVisited && (
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                          isDark ? 'bg-emerald-500 text-white' : 'bg-[#10b981] text-white'
+                        }`}>
+                          ✓ VISITED
+                        </span>
+                      )}
                     </div>
-                  </button>
-                  
-                  <button onClick={() => handleTempleClick(temple)} className="flex-1 text-left">
-                    <h4 className={`font-semibold ${isVisited ? (isDark ? 'text-white' : 'text-black') : (isDark ? 'text-white/90' : 'text-black/90')}`}>
+
+                    {/* Top Right Actions */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleTempleClick(temple)}
+                        className={`w-9 h-9 flex items-center justify-center rounded-xl border transition-colors ${
+                          isDark ? 'border-indigo-400/30 text-indigo-300 hover:bg-indigo-400/15' : 'border-indigo-200 text-indigo-500 hover:bg-indigo-50'
+                        }`}
+                        title="Show Map and Info"
+                      >
+                        <MapIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => handleAddInterest(temple, e)}
+                        className={`w-9 h-9 flex items-center justify-center rounded-xl border transition-colors ${
+                          isDark ? 'border-blue-400/30 text-blue-300 hover:bg-blue-400/15' : 'border-blue-200 text-blue-500 hover:bg-blue-50'
+                        }`}
+                        title="Add to Interests"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                      </button>
+                      {isOwner && (
+                        <button
+                          onClick={() => handleRemoveTemple(temple.placeId)}
+                          className={`w-9 h-9 flex items-center justify-center rounded-xl border transition-colors ${
+                            isDark ? 'border-red-400/30 text-red-400 hover:bg-red-400/15' : 'border-red-200 text-red-500 hover:bg-red-50'
+                          }`}
+                          title="Remove from list"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Temple Details */}
+                  <div className="mb-6">
+                    <h3 className={`font-semibold text-xl ${isDark ? 'text-white' : 'text-[#141414]'}`}>
                       {temple.name}
-                    </h4>
-                    {temple.address && (
-                      <p className={`text-xs mt-1 ${isDark ? 'text-white/50' : 'text-black/50'} flex items-center gap-1`}>
-                        <MapPin className="w-3 h-3 shrink-0" /> <span className="line-clamp-1">{temple.address}</span>
+                    </h3>
+                    {isVisited && userPlace?.lastVisitDate && (
+                      <p className={`text-sm mt-1 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
+                        Last visit · {formatVisitDate(userPlace.lastVisitDate)}
                       </p>
                     )}
-                  </button>
+                  </div>
 
-                  {isOwner && (
+                  {/* Bottom Action */}
+                  <div>
                     <button
-                      onClick={() => handleRemoveTemple(temple.placeId)}
-                      className={`p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
-                        isDark ? 'hover:bg-red-500/20 text-red-400' : 'hover:bg-red-50 text-red-600'
+                      onClick={(e) => handleLogVisit(temple, e)}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                        isDark ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/15' : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/10'
                       }`}
-                      title="Remove from list"
                     >
-                      <X className="w-4 h-4" />
+                      <BookOpen className="w-4 h-4" />
+                      {hasVisitDetails ? 'Previous visit' : 'Log visit'}
                     </button>
-                  )}
+                  </div>
                 </div>
               );
             })}
@@ -446,6 +540,24 @@ export default function DivyaDesamDetail() {
         list={list}
         onSaved={setList}
       />
+
+      <TempleDetailDialog
+        open={!!selectedTempleDialog}
+        onOpenChange={(open) => !open && setSelectedTempleDialog(null)}
+        temple={selectedTempleDialog}
+      />
+
+      {visitLogTarget && visitLogTarget.place._id && (
+        <VisitLogDialog
+          open={!!visitLogTarget}
+          onOpenChange={(open) => !open && setVisitLogTarget(null)}
+          placeDocId={visitLogTarget.place._id}
+          placeName={visitLogTarget.place.name}
+          placeId={visitLogTarget.place.placeId}
+          initialView={visitLogTarget.initialView}
+          onVisitsChanged={refreshUserPlaces}
+        />
+      )}
     </div>
   );
 }
