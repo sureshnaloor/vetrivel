@@ -142,9 +142,19 @@ placesRouter.post("/resolve-link", async (req, res) => {
     let extractedLat = 0;
     let extractedLng = 0;
 
-    const placeMatch = finalUrl.match(/\/place\/([^\/]+)/);
+    const placeMatch = finalUrl.match(/\/place\/([^\/?]+)/);
     if (placeMatch && placeMatch[1]) {
       extractedName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+    } else {
+      const searchMatch = finalUrl.match(/\/search\/([^\/?]+)/);
+      if (searchMatch && searchMatch[1]) {
+        extractedName = decodeURIComponent(searchMatch[1].replace(/\+/g, ' '));
+      } else {
+        const qMatch = finalUrl.match(/[?&]q=([^&]+)/);
+        if (qMatch && qMatch[1]) {
+          extractedName = decodeURIComponent(qMatch[1].replace(/\+/g, ' '));
+        }
+      }
     }
 
     const atMatch = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
@@ -156,7 +166,18 @@ placesRouter.post("/resolve-link", async (req, res) => {
       if (dMatch) {
         extractedLat = parseFloat(dMatch[1]);
         extractedLng = parseFloat(dMatch[2]);
+      } else {
+        const llMatch = finalUrl.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+        if (llMatch) {
+          extractedLat = parseFloat(llMatch[1]);
+          extractedLng = parseFloat(llMatch[2]);
+        }
       }
+    }
+
+    // If we only have coordinates but no name, fallback to "Unknown Place" so we can still search
+    if (!extractedName && extractedLat && extractedLng) {
+      extractedName = "Unknown Place";
     }
 
     if (!extractedName || !extractedLat) {
