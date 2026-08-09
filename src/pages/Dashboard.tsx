@@ -23,7 +23,6 @@ export default function Dashboard() {
   const { acceptInvite } = useFriends();
   const [searchParams, setSearchParams] = useSearchParams();
   const [inviteToast, setInviteToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [isPublishSpaceOpen, setIsPublishSpaceOpen] = useState(false);
   const [isAddTempleOpen, setIsAddTempleOpen] = useState(false);
   const dashboardRef = useRef<HTMLDivElement>(null);
   
