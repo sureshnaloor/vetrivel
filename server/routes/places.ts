@@ -134,7 +134,13 @@ placesRouter.post("/resolve-link", async (req, res) => {
 
   try {
     // 1. Fetch the url to follow redirects and get HTML
-    const response = await fetch(url);
+    // Set a modern browser User-Agent and Accept-Language to prevent Google from serving a consent or captcha page
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+        "Accept-Language": "en-US,en;q=0.9"
+      }
+    });
     const finalUrl = response.url;
     const html = await response.text();
 
