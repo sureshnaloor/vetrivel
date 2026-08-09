@@ -18,6 +18,7 @@
       "bundleIdentifier": "com.optaimyze.vetrivel",
       "usesAppleSignIn": true,
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Allow Vetrivel to attach photos and videos from your library to visit logs and temple pages.",
         "NSCameraUsageDescription": "Allow Vetrivel to take photos and videos when you log a temple visit.",
         "NSMicrophoneUsageDescription": "Allow Vetrivel to record audio when you capture visit videos."

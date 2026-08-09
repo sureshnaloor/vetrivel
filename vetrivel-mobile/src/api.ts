@@ -999,3 +999,89 @@ export async function getCommunityMembers(
     role: row.role === "owner" ? "owner" : "member",
   }));
 }
+
+// --- New APIs Ported from Web ---
+
+export async function resolveMapLink(
+  accessToken: string,
+  url: string
+): Promise<{ placeId: string; name: string; coordinates: LatLng; address: string }> {
+  const { data } = await api.post(
+    "/api/places/resolve-link",
+    { url },
+    { headers: authHeaders(accessToken) }
+  );
+  return data;
+}
+
+export interface TempleListItem {
+  placeId: string;
+  name: string;
+  coordinates: LatLng;
+  address: string;
+}
+
+export interface DivyaDesamList {
+  _id: string;
+  name: string;
+  description: string;
+  creatorEmail: string;
+  isGlobalTemplate: boolean;
+  isPublished: boolean;
+  parentListId: string | null;
+  iconSvg?: string;
+  temples: TempleListItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchDivyaDesamLists(accessToken: string): Promise<DivyaDesamList[]> {
+  const { data } = await api.get("/api/divyadesam", {
+    headers: authHeaders(accessToken),
+  });
+  return data;
+}
+
+export async function fetchDivyaDesamListDetails(accessToken: string, id: string): Promise<DivyaDesamList> {
+  const { data } = await api.get(`/api/divyadesam/${id}`, {
+    headers: authHeaders(accessToken),
+  });
+  return data;
+}
+
+export async function createDivyaDesamList(
+  accessToken: string,
+  input: Partial<DivyaDesamList>
+): Promise<DivyaDesamList> {
+  const { data } = await api.post("/api/divyadesam", input, {
+    headers: authHeaders(accessToken),
+  });
+  return data;
+}
+
+export async function cloneDivyaDesamList(
+  accessToken: string,
+  id: string
+): Promise<DivyaDesamList> {
+  const { data } = await api.post(`/api/divyadesam/${id}/clone`, {}, {
+    headers: authHeaders(accessToken),
+  });
+  return data;
+}
+
+export async function updateDivyaDesamList(
+  accessToken: string,
+  id: string,
+  updates: Partial<DivyaDesamList>
+): Promise<DivyaDesamList> {
+  const { data } = await api.patch(`/api/divyadesam/${id}`, updates, {
+    headers: authHeaders(accessToken),
+  });
+  return data;
+}
+
+export async function deleteDivyaDesamList(accessToken: string, id: string): Promise<void> {
+  await api.delete(`/api/divyadesam/${id}`, {
+    headers: authHeaders(accessToken),
+  });
+}

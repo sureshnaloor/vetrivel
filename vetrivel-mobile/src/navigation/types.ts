@@ -1,7 +1,15 @@
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
+export type MainTabsParamList = {
+  HomeTab: undefined;
+  CommunitiesTab: undefined;
+  DivyaDesamTab: undefined;
+  SettingsTab: undefined;
+};
+
 export type RootStackParamList = {
-  Home: undefined;
+  MainTabs: NavigatorScreenParams<MainTabsParamList>;
   Friends: undefined;
-  Communities: undefined;
   CreateSpace: undefined;
   NestDetail: {
     locationId: string;
@@ -11,5 +19,9 @@ export type RootStackParamList = {
     address?: string;
     ownerName?: string;
     isFriendNest?: boolean;
+  };
+  DivyaDesamDetail: {
+    id: string;
+    name: string;
   };
 };

@@ -14,6 +14,7 @@ import {
 import type { UserLocation } from "../api";
 import { getLocations, getUnscopedPlaces, getApiErrorMessage } from "../api";
 import { SpaceMap, type MapMarker } from "../components/SpaceMap";
+import { AddTempleModal } from "../components/AddTempleModal";
 import type { MobileAuthSession } from "../auth";
 import type { LatLng } from "../lib/geo";
 import type { RootStackParamList } from "../navigation/types";
@@ -36,6 +37,7 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAddTempleOpen, setIsAddTempleOpen] = useState(false);
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -146,25 +148,10 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
         </View>
         <View style={styles.headerActions}>
           <Pressable
-            style={styles.friendsButton}
-            onPress={() => navigation.navigate("Communities")}
-          >
-            <Text style={styles.friendsText}>Communities</Text>
-          </Pressable>
-          <Pressable
-            style={styles.friendsButton}
-            onPress={() => navigation.navigate("Friends")}
-          >
-            <Text style={styles.friendsText}>Friends</Text>
-          </Pressable>
-          <Pressable
             style={styles.addSpaceButton}
             onPress={() => navigation.navigate("CreateSpace")}
           >
             <Text style={styles.addSpaceText}>Add space</Text>
-          </Pressable>
-          <Pressable style={styles.logoutButton} onPress={onLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
           </Pressable>
         </View>
       </View>
@@ -214,6 +201,21 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
           </Pressable>
         )}
       />
+      
+      {/* Floating Action Button (FAB) */}
+      <Pressable 
+        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+        onPress={() => setIsAddTempleOpen(true)}
+      >
+        <Text style={styles.fabText}>+ Add Temple</Text>
+      </Pressable>
+
+      <AddTempleModal
+        visible={isAddTempleOpen}
+        onClose={() => setIsAddTempleOpen(false)}
+        accessToken={session.accessToken}
+        onTempleAdded={() => load(true)}
+      />
     </View>
   );
 }
@@ -246,6 +248,15 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   friendsText: { fontWeight: "600", fontSize: 13, color: "#D13B3B" },
+  divyaDesamButton: {
+    borderWidth: 1,
+    borderColor: "#0D9488",
+    backgroundColor: "rgba(13,148,136,0.1)",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  divyaDesamText: { fontWeight: "600", fontSize: 13, color: "#0D9488" },
   addSpaceButton: {
     backgroundColor: "#D13B3B",
     borderRadius: 8,
@@ -282,20 +293,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   card: {
+    padding: 20,
+    backgroundColor: "#FFF",
+    borderRadius: 24,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#e8e8e8",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    backgroundColor: "#fff",
+    borderColor: "rgba(0,0,0,0.04)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
+    elevation: 4,
   },
-  cardPressed: { opacity: 0.85, backgroundColor: "#fafafa" },
-  cardTitle: { fontSize: 16, fontWeight: "600" },
-  cardMeta: { fontSize: 12, color: "#666", marginTop: 4 },
+  cardPressed: { backgroundColor: "#fafafa", transform: [{ scale: 0.98 }] },
+  cardTitle: { fontSize: 18, fontWeight: "700", color: "#333", marginBottom: 6 },
+  cardMeta: { fontSize: 13, color: "#666", marginBottom: 12, lineHeight: 18 },
   cardChevron: {
-    fontSize: 12,
-    color: "#D13B3B",
-    marginTop: 8,
+    fontSize: 13,
+    color: "#0D9488",
     fontWeight: "600",
+    marginTop: 4,
+  },
+  fab: {
+    position: "absolute",
+    bottom: 24,
+    right: 24,
+    backgroundColor: "#0D9488",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 30,
+    shadowColor: "#0D9488",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  fabPressed: {
+    opacity: 0.8,
+    transform: [{ scale: 0.95 }],
+  },
+  fabText: {
+    color: "#FFF",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });
