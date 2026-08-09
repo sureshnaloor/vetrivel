@@ -7,7 +7,7 @@ import { inspectAttr } from 'kimi-plugin-inspect-react'
 const apiTarget = process.env.VITE_API_PROXY_TARGET || "http://localhost:3000";
 
 export default defineConfig({
-  base: './',
+  base: '/',
   plugins: [inspectAttr(), react()],
   resolve: {
     alias: {
