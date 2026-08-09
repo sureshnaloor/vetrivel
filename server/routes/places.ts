@@ -133,44 +133,66 @@ placesRouter.post("/resolve-link", async (req, res) => {
   if (!apiKey) return res.status(503).json({ error: "Google Maps API Key not configured" });
 
   try {
-    // 1. Fetch the url to follow redirects
+    // 1. Fetch the url to follow redirects and get HTML
     const response = await fetch(url);
     const finalUrl = response.url;
+    const html = await response.text();
 
     // 2. Extract name and coordinates
     let extractedName = "";
     let extractedLat = 0;
     let extractedLng = 0;
 
-    const placeMatch = finalUrl.match(/\/place\/([^\/?]+)/);
-    if (placeMatch && placeMatch[1]) {
-      extractedName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
-    } else {
-      const searchMatch = finalUrl.match(/\/search\/([^\/?]+)/);
-      if (searchMatch && searchMatch[1]) {
-        extractedName = decodeURIComponent(searchMatch[1].replace(/\+/g, ' '));
+    // Try to extract from HTML meta tags first (most reliable for iOS shared links)
+    const titleMatch = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]+)"/i);
+    if (titleMatch && titleMatch[1]) {
+      extractedName = decodeURIComponent(titleMatch[1].replace(/&#x27;/g, "'").replace(/&amp;/g, "&").trim());
+    }
+
+    const imageMatch = html.match(/<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"/i);
+    if (imageMatch && imageMatch[1]) {
+      const imgUrl = decodeURIComponent(imageMatch[1].replace(/&amp;/g, "&"));
+      const centerMatch = imgUrl.match(/center=(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (centerMatch) {
+        extractedLat = parseFloat(centerMatch[1]);
+        extractedLng = parseFloat(centerMatch[2]);
+      }
+    }
+
+    // Fallback: Parse from URL if HTML parsing failed
+    if (!extractedName) {
+      const placeMatch = finalUrl.match(/\/place\/([^\/?]+)/);
+      if (placeMatch && placeMatch[1]) {
+        extractedName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
       } else {
-        const qMatch = finalUrl.match(/[?&]q=([^&]+)/);
-        if (qMatch && qMatch[1]) {
-          extractedName = decodeURIComponent(qMatch[1].replace(/\+/g, ' '));
+        const searchMatch = finalUrl.match(/\/search\/([^\/?]+)/);
+        if (searchMatch && searchMatch[1]) {
+          extractedName = decodeURIComponent(searchMatch[1].replace(/\+/g, ' '));
+        } else {
+          const qMatch = finalUrl.match(/[?&]q=([^&]+)/);
+          if (qMatch && qMatch[1]) {
+            extractedName = decodeURIComponent(qMatch[1].replace(/\+/g, ' '));
+          }
         }
       }
     }
 
-    const atMatch = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if (atMatch) {
-      extractedLat = parseFloat(atMatch[1]);
-      extractedLng = parseFloat(atMatch[2]);
-    } else {
-      const dMatch = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-      if (dMatch) {
-        extractedLat = parseFloat(dMatch[1]);
-        extractedLng = parseFloat(dMatch[2]);
+    if (!extractedLat || !extractedLng) {
+      const atMatch = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (atMatch) {
+        extractedLat = parseFloat(atMatch[1]);
+        extractedLng = parseFloat(atMatch[2]);
       } else {
-        const llMatch = finalUrl.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
-        if (llMatch) {
-          extractedLat = parseFloat(llMatch[1]);
-          extractedLng = parseFloat(llMatch[2]);
+        const dMatch = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+        if (dMatch) {
+          extractedLat = parseFloat(dMatch[1]);
+          extractedLng = parseFloat(dMatch[2]);
+        } else {
+          const llMatch = finalUrl.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
+          if (llMatch) {
+            extractedLat = parseFloat(llMatch[1]);
+            extractedLng = parseFloat(llMatch[2]);
+          }
         }
       }
     }
@@ -181,7 +203,7 @@ placesRouter.post("/resolve-link", async (req, res) => {
     }
 
     if (!extractedName || !extractedLat) {
-      return res.status(400).json({ error: "Could not parse Google Maps URL" });
+      return res.status(400).json({ error: `Could not parse Google Maps URL. Final URL was: ${finalUrl}` });
     }
 
     // 3. Search Google Places API by Text to get exact Place ID
