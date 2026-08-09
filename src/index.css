@@ -45,8 +45,10 @@
     --section-dark-bg: #0E0F12;
     --section-dark-fg: #ffffff;
     --card-bg: #ffffff;
+    --card-bg-glossy: rgba(255, 255, 255, 0.4);
+    --card-inset-highlight: rgba(255, 255, 255, 0.8);
     --card-border: rgba(20, 20, 20, 0.08);
-    --card-shadow: rgba(0, 0, 0, 0.08);
+    --card-shadow: rgba(0, 0, 0, 0.12);
     --text-shadow-1: #e5dac5;
     --text-shadow-2: #d5c4a5;
   }
@@ -89,6 +91,8 @@
     --section-dark-bg: #0E0F12;
     --section-dark-fg: #ffffff;
     --card-bg: #1a1b20;
+    --card-bg-glossy: rgba(255, 255, 255, 0.03);
+    --card-inset-highlight: rgba(255, 255, 255, 0.08);
     --card-border: rgba(255, 255, 255, 0.08);
     --card-shadow: rgba(0, 0, 0, 0.3);
     --text-shadow-1: #2a2a2a;
@@ -170,6 +174,25 @@
     border-radius: 10px;
     border: 1px solid rgba(20, 20, 20, 0.08);
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.08);
+  }
+
+  .dashboard-card {
+    @apply border transition-all duration-300;
+    border-radius: 24px;
+    background: linear-gradient(145deg, var(--card-bg), var(--card-bg-glossy, var(--card-bg)));
+    border-color: var(--card-border);
+    box-shadow: 
+      0 24px 60px rgba(0, 0, 0, 0.12),
+      inset 0 1px 1px var(--card-inset-highlight);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  
+  .dashboard-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 
+      0 32px 70px rgba(0, 0, 0, 0.16),
+      inset 0 1px 2px var(--card-inset-highlight);
   }
   
   /* Button Styles */

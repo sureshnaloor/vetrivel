@@ -379,7 +379,7 @@ export default function RightRail() {
   // Empty state — no temple selected
   if (!selectedTemple) {
     return (
-      <div className={`flex flex-col h-full rounded-2xl border overflow-hidden ${isDark ? 'bg-[#131418] border-white/10 text-white' : 'bg-white border-[#e5e5e5] text-[#141414] shadow-sm'}`}>
+      <div className={`dashboard-card flex flex-col h-full overflow-hidden ${isDark ? 'text-white' : 'text-[#141414]'}`}>
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
           <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
             <style>{`
@@ -421,7 +421,7 @@ export default function RightRail() {
       </div>
 
       {showUgcForm && activeTab !== 'media' && (
-        <div className={`p-3 rounded-lg border mb-4 ${isDark ? 'bg-white/5 border-white/10' : 'bg-[#f8f8f8] border-[#e5e5e5]'}`}>
+        <div className={`p-3 rounded-xl border shadow-sm mb-4 ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/5'}`}>
           <textarea
             value={ugcInput}
             onChange={e => setUgcInput(e.target.value)}
@@ -463,7 +463,7 @@ export default function RightRail() {
         ) : (
           <div className="space-y-3">
             {currentUgc.map(item => (
-              <div key={item._id} className={`p-3 rounded-lg text-sm border relative group ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.02] border-[#e5e5e5]'}`}>
+              <div key={item._id} className={`p-4 rounded-xl text-sm border shadow-sm relative group ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/5'}`}>
                 <p className={`text-xs mb-1 font-medium ${isDark ? 'text-white/60' : 'text-gray-500'}`}>{item.userName}</p>
                 <p className="whitespace-pre-wrap">{item.content}</p>
                 {session?.user?.email === item.userEmail && (
@@ -482,7 +482,7 @@ export default function RightRail() {
   );
 
   return (
-    <div className={`flex flex-col h-full rounded-2xl border overflow-hidden ${isDark ? 'bg-[#131418] border-white/10 text-white' : 'bg-white border-[#e5e5e5] text-[#141414] shadow-sm'}`}>
+    <div className={`dashboard-card flex flex-col h-full overflow-hidden ${isDark ? 'text-white' : 'text-[#141414]'}`}>
       
       {/* Context Header */}
       <div className={`p-6 border-b ${isDark ? 'border-white/10' : 'border-[#e5e5e5]'}`}>
@@ -832,7 +832,7 @@ export default function RightRail() {
              ) : (
                <div className="space-y-3">
                  {/* Air Placeholder */}
-                 <div className={`p-4 rounded-xl border flex items-center gap-4 opacity-50 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
+                 <div className={`p-4 rounded-xl border flex items-center gap-4 opacity-50 shadow-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/5'}`}>
                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>
                      <Plane className="w-5 h-5" />
                    </div>

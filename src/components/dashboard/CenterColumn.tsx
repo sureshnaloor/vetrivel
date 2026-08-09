@@ -288,6 +288,11 @@ export default function CenterColumn() {
     }
   }, [session, activeLocationId, setPinToAssign]);
 
+  useEffect(() => {
+    window.addEventListener('places-updated', refreshUserPlaces);
+    return () => window.removeEventListener('places-updated', refreshUserPlaces);
+  }, [refreshUserPlaces]);
+
   const handleMapRightClick = (e: google.maps.MapMouseEvent) => {
     if (e.latLng && e.domEvent) {
       const domEvent = e.domEvent as MouseEvent;
@@ -716,7 +721,7 @@ export default function CenterColumn() {
     <div className={`flex flex-col gap-6 pb-24 ${isDark ? 'text-white' : 'text-[#141414]'}`}>
       
       {/* AI-Powered Nearby Card */}
-      <div className={`p-6 rounded-2xl border overflow-hidden relative ${isDark ? 'bg-gradient-to-br from-[#1c1815] to-[#131418] border-[#D13B3B]/20' : 'bg-gradient-to-br from-[#fffaf4] to-[#fcfcfc] border-[#D13B3B]/20 shadow-sm'}`}>
+      <div className={`dashboard-card p-6 !rounded-tl-[40px] !rounded-br-[40px] overflow-hidden relative ${isDark ? 'bg-gradient-to-br from-[#1c1815] to-[#131418]' : 'bg-gradient-to-br from-[#fffaf4] to-[#fcfcfc]'}`}>
         <div className="absolute top-0 right-0 w-32 h-32 bg-[#D13B3B]/5 rounded-bl-full -z-10"></div>
         
         <div className="flex items-center justify-between mb-6">
@@ -882,7 +887,7 @@ export default function CenterColumn() {
           </div>
         )}
         {isLoaded && dashboardMapCenter && (
-          <div className={`mt-6 rounded-xl overflow-hidden shadow-sm border h-[340px] relative z-0 flex-shrink-0 ${isDark ? 'border-white/10' : 'border-[#e5e5e5]'}`}>
+          <div className="mt-6 dashboard-card !rounded-tr-[40px] !rounded-bl-[40px] overflow-hidden h-[340px] relative z-0 flex-shrink-0">
             {pinToAssign && (
               <div
                 className={`absolute top-2 left-2 right-2 z-[5] rounded-xl border p-3 shadow-lg ${isDark ? 'bg-[#131418]/95 border-white/10 backdrop-blur-sm' : 'bg-white/95 border-[#e5e5e5] backdrop-blur-sm'}`}
@@ -1257,12 +1262,12 @@ export default function CenterColumn() {
           userPlaces.filter(p => p.category === 'nest').map((place, i) => (
             <div 
                key={i} 
-               className={`p-5 rounded-2xl border flex flex-col justify-between min-h-[160px] cursor-pointer transition-transform hover:-translate-y-1 ${
+               className={`dashboard-card p-5 flex flex-col justify-between min-h-[160px] cursor-pointer transition-transform hover:-translate-y-1 ${
                  place.status === 'visited'
                    ? (isDark
                        ? 'bg-emerald-500/10 border-emerald-400/40 shadow-[0_0_0_1px_rgba(52,211,153,0.15)]'
-                       : 'bg-emerald-50 border-emerald-300 shadow-sm shadow-emerald-100')
-                   : (isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm')
+                       : 'bg-emerald-50 border-emerald-300 shadow-[0_12px_30px_rgba(52,211,153,0.1)]')
+                   : ''
                } ${selectedTwinkleId === place._id ? 'ring-2 ring-[#0D9488]' : ''}`}
                onClick={() => { const d = selectedTwinkleId === place._id; setSelectedTwinkleId(d ? null : (place._id || place.name || null)); if (d) setSelectedTemple(null); else selectUserPlace(place); }}
             >

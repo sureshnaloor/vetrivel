@@ -123,6 +123,79 @@ placesRouter.get("/nearby", async (req, res) => {
   }
 });
 
+// POST /api/places/resolve-link
+// Resolves a Google Maps link (e.g. short link) and returns parsed place info.
+placesRouter.post("/resolve-link", async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: "URL is required" });
+
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "Google Maps API Key not configured" });
+
+  try {
+    // 1. Fetch the url to follow redirects
+    const response = await fetch(url);
+    const finalUrl = response.url;
+
+    // 2. Extract name and coordinates
+    let extractedName = "";
+    let extractedLat = 0;
+    let extractedLng = 0;
+
+    const placeMatch = finalUrl.match(/\/place\/([^\/]+)/);
+    if (placeMatch && placeMatch[1]) {
+      extractedName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+    }
+
+    const atMatch = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (atMatch) {
+      extractedLat = parseFloat(atMatch[1]);
+      extractedLng = parseFloat(atMatch[2]);
+    } else {
+      const dMatch = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+      if (dMatch) {
+        extractedLat = parseFloat(dMatch[1]);
+        extractedLng = parseFloat(dMatch[2]);
+      }
+    }
+
+    if (!extractedName || !extractedLat) {
+      return res.status(400).json({ error: "Could not parse Google Maps URL" });
+    }
+
+    // 3. Search Google Places API by Text to get exact Place ID
+    const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+    searchUrl.searchParams.set("query", extractedName);
+    searchUrl.searchParams.set("location", `${extractedLat},${extractedLng}`);
+    searchUrl.searchParams.set("radius", "1000"); // 1km radius bias
+    searchUrl.searchParams.set("key", apiKey);
+
+    const searchRes = await fetch(searchUrl.toString());
+    const searchData = await searchRes.json() as any;
+
+    if (searchData.status === "OK" && searchData.results && searchData.results.length > 0) {
+      const topResult = searchData.results[0];
+      return res.json({
+        placeId: topResult.place_id,
+        name: topResult.name || extractedName,
+        coordinates: topResult.geometry?.location || { lat: extractedLat, lng: extractedLng },
+        address: topResult.formatted_address || topResult.vicinity || ""
+      });
+    }
+
+    // Fallback if search fails
+    return res.json({
+      placeId: "",
+      name: extractedName,
+      coordinates: { lat: extractedLat, lng: extractedLng },
+      address: ""
+    });
+  } catch (error) {
+    console.error("Error resolving link:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // GET /api/places/details?placeId=...
 // Google Place Details (JSON) for mobile — mirrors web RightRail PlacesService.getDetails fields.
 placesRouter.get("/details", async (req, res) => {

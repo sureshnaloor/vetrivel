@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { gsap } from 'gsap';
 import Navigation from '../components/Navigation';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -14,6 +15,7 @@ import LocationSelector from '../components/dashboard/LocationSelector';
 import NearbySuggestionWidget from '../components/dashboard/NearbySuggestionWidget';
 import { DashboardPinnedProvider } from '../contexts/DashboardPinnedContext';
 import { SelectedTempleProvider } from '../contexts/SelectedTempleContext';
+import AddTempleDialog from '../components/dashboard/AddTempleDialog';
 
 export default function Dashboard() {
   const { session } = useAuth();
@@ -21,8 +23,33 @@ export default function Dashboard() {
   const { acceptInvite } = useFriends();
   const [searchParams, setSearchParams] = useSearchParams();
   const [inviteToast, setInviteToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isPublishSpaceOpen, setIsPublishSpaceOpen] = useState(false);
+  const [isAddTempleOpen, setIsAddTempleOpen] = useState(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
   
   const isDark = theme === 'dark';
+
+  // GSAP Entrance Animations
+  useEffect(() => {
+    const ctx = gsap.context(() => {
+      gsap.to('.dashboard-header-animate', {
+        opacity: 1,
+        y: 0,
+        duration: 0.8,
+        ease: 'power3.out',
+      });
+      gsap.to('.dashboard-col-animate', {
+        opacity: 1,
+        y: 0,
+        duration: 0.8,
+        stagger: 0.15,
+        ease: 'power3.out',
+        delay: 0.1
+      });
+    }, dashboardRef);
+
+    return () => ctx.revert();
+  }, []);
 
   // Auto-accept invite link from URL
   useEffect(() => {
@@ -67,15 +94,15 @@ export default function Dashboard() {
         </div>
       )}
 
-      <main className="max-w-[1600px] mx-auto pt-24 pb-12 px-4 sm:px-6 lg:px-8 min-h-screen flex flex-col">
+      <main className="max-w-[1600px] mx-auto pt-24 pb-12 px-4 sm:px-6 lg:px-8 min-h-screen flex flex-col" ref={dashboardRef}>
         
         {/* Top Bar / Header */}
-        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 flex-shrink-0">
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 flex-shrink-0 dashboard-header-animate opacity-0 translate-y-4">
           <div>
-            <h1 className="font-display text-3xl font-semibold">
+            <h1 className="font-display text-4xl font-semibold">
               Namaste, {session?.user?.name?.split(' ')[0] || 'Devotee'} 🙏
             </h1>
-            <p className={`text-sm mt-1 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
+            <p className={`text-lg mt-1 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>
               Your spiritual journey, mapped and guided.
             </p>
           </div>
@@ -85,27 +112,18 @@ export default function Dashboard() {
             <LocationSelector />
 
             {/* Quick Actions */}
-            <button className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              isDark 
-                ? 'bg-white/10 hover:bg-white/20 text-white' 
-                : 'bg-black/5 hover:bg-black/10 text-[#141414]'
-            }`}>
-              <Plus className="w-4 h-4" /> Add Temple
+            <button 
+              onClick={() => setIsAddTempleOpen(true)}
+              className="btn-primary whitespace-nowrap !px-4 !py-2 !text-sm"
+            >
+              <Plus className="w-4 h-4 mr-2" /> Add Temple
             </button>
-            <button className={`p-2 rounded-full transition-colors flex-shrink-0 ${
-              isDark 
-                ? 'bg-white/10 hover:bg-white/20 text-white' 
-                : 'bg-black/5 hover:bg-black/10 text-[#141414]'
-            }`} title="Scan QR">
+            <button className="btn-secondary !p-3 rounded-full flex-shrink-0" title="Scan QR">
               <Maximize className="w-4 h-4" />
             </button>
-            <button className={`p-2 rounded-full relative transition-colors flex-shrink-0 ${
-              isDark 
-                ? 'bg-white/10 hover:bg-white/20 text-white' 
-                : 'bg-black/5 hover:bg-black/10 text-[#141414]'
-            }`} title="Notifications">
+            <button className="btn-secondary !p-3 rounded-full relative flex-shrink-0" title="Notifications">
               <Bell className="w-4 h-4" />
-              <span className="absolute top-0 right-0 w-2 h-2 rounded-full bg-[#D13B3B] border-2 border-[var(--page-bg)]"></span>
+              <span className="absolute top-0 right-0 w-3 h-3 rounded-full bg-[#D13B3B] border-2 border-[var(--page-bg)]"></span>
             </button>
           </div>
         </header>
@@ -114,17 +132,17 @@ export default function Dashboard() {
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 pb-4 pt-4">
           
           {/* Left Rail (25%) */}
-          <div className="lg:col-span-1">
-            <LeftRail />
+          <div className="lg:col-span-1 dashboard-col-animate opacity-0 translate-y-8">
+            <LeftRail onOpenAddTemple={() => setIsAddTempleOpen(true)} />
           </div>
 
           {/* Center Column (50%) */}
-          <div className="lg:col-span-2 px-1">
+          <div className="lg:col-span-2 px-1 dashboard-col-animate opacity-0 translate-y-8">
             <CenterColumn />
           </div>
 
           {/* Right Rail (25%) */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 dashboard-col-animate opacity-0 translate-y-8">
             <RightRail />
           </div>
 
@@ -138,6 +156,11 @@ export default function Dashboard() {
 
       {/* Dashboard Specific Footer */}
       <DashboardFooter />
+
+      <AddTempleDialog
+        open={isAddTempleOpen}
+        onOpenChange={setIsAddTempleOpen}
+      />
     </div>
     </SelectedTempleProvider>
     </DashboardPinnedProvider>

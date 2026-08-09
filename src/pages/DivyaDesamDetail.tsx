@@ -3,10 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Navigation from '../components/Navigation';
 import { useTheme } from '../hooks/useTheme';
 import { fetchListDetails } from '../services/divyadesam';
-import type { DivyaDesamList } from '../services/divyadesam';
-import { fetchPlaces, savePlace, type UserPlace } from '../services/places';
+import type { DivyaDesamList, TempleListItem } from '../services/divyadesam';
+import { fetchPlaces, savePlace, resolveMapLink, type UserPlace } from '../services/places';
 import { useAuth } from '../hooks/useAuth';
-import { ArrowLeft, Loader2, Edit2, Trash2, Search, BookOpen, Sparkles, Map as MapIcon } from 'lucide-react';
+import { ArrowLeft, Loader2, Edit2, Trash2, Search, BookOpen, Sparkles, Map as MapIcon, Link2 } from 'lucide-react';
 import { useLocation } from '../contexts/LocationContext';
 import { useDivyaDesam } from '../contexts/DivyaDesamContext';
 import { Autocomplete } from '@react-google-maps/api';
@@ -44,12 +44,18 @@ export default function DivyaDesamDetail() {
   const [selectedTempleDialog, setSelectedTempleDialog] = useState<any | null>(null);
   const [autocomplete, setAutocomplete] = useState<google.maps.places.Autocomplete | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  const [addMode, setAddMode] = useState<'search' | 'manual'>('search');
+  const [addMode, setAddMode] = useState<'search' | 'manual' | 'link'>('search');
+  
+  // Manual / Link entry state
   const [manualName, setManualName] = useState('');
   const [manualLat, setManualLat] = useState('');
   const [manualLng, setManualLng] = useState('');
   const [manualAddress, setManualAddress] = useState('');
+  const [manualPlaceId, setManualPlaceId] = useState('');
   const [manualSaving, setManualSaving] = useState(false);
+  
+  const [linkUrl, setLinkUrl] = useState('');
+  const [resolvingLink, setResolvingLink] = useState(false);
   
   const [visitLogTarget, setVisitLogTarget] = useState<{
     place: UserPlace;
@@ -234,33 +240,58 @@ export default function DivyaDesamDetail() {
 
   const handleManualAdd = async () => {
     if (!list) return;
-    if (!manualName.trim()) { alert('Name is required'); return; }
-    const lat = parseFloat(manualLat);
-    const lng = parseFloat(manualLng);
-    if (isNaN(lat) || isNaN(lng)) { alert('Valid latitude and longitude are required'); return; }
-
-    const placeId = `manual_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const newTemple = {
-      placeId,
-      name: manualName.trim(),
-      coordinates: { lat, lng },
-      address: manualAddress.trim()
-    };
-
+    if (!manualName || !manualLat || !manualLng) {
+      alert('Name, Latitude, and Longitude are required.');
+      return;
+    }
+    
     setManualSaving(true);
     try {
-      const updated = await updateList(list._id, { temples: [...list.temples, newTemple] });
+      const lat = parseFloat(manualLat);
+      const lng = parseFloat(manualLng);
+      if (isNaN(lat) || isNaN(lng)) throw new Error('Invalid coordinates');
+
+      const newTemple: TempleListItem = {
+        placeId: manualPlaceId || `manual_${Date.now()}`,
+        name: manualName,
+        coordinates: { lat, lng },
+        address: manualAddress || ''
+      };
+
+      const updated = await updateList(list._id, {
+        temples: [...list.temples, newTemple]
+      });
       setList(updated);
+      
       setManualName('');
       setManualLat('');
       setManualLng('');
       setManualAddress('');
+      setManualPlaceId('');
       setIsAdding(false);
-    } catch (err) {
-      console.error(err);
-      alert('Failed to add temple');
+    } catch (err: any) {
+      alert(err.message || 'Failed to add temple');
     } finally {
       setManualSaving(false);
+    }
+  };
+
+  const handleResolveLink = async () => {
+    if (!linkUrl) return;
+    setResolvingLink(true);
+    try {
+      const data = await resolveMapLink(linkUrl);
+      setManualName(data.name);
+      setManualLat(data.coordinates.lat.toString());
+      setManualLng(data.coordinates.lng.toString());
+      setManualAddress(data.address);
+      setManualPlaceId(data.placeId);
+      setAddMode('manual');
+      setLinkUrl('');
+    } catch (err: any) {
+      alert(err.message || 'Failed to resolve link');
+    } finally {
+      setResolvingLink(false);
     }
   };
 
@@ -330,7 +361,7 @@ export default function DivyaDesamDetail() {
             </p>
 
             {/* Progress Bar */}
-            <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+            <div className={`p-6 rounded-2xl border shadow-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/5'}`}>
               <div className="flex items-center justify-between mb-3">
                 <span className="font-medium text-sm">Pilgrimage Progress</span>
                 <span className="font-bold text-[#0D9488]">{visitedCount} / {totalCount} Visited</span>
@@ -379,7 +410,7 @@ export default function DivyaDesamDetail() {
         </div>
         </header>
 
-        <div className="space-y-4">
+        <div className="space-y-4 dashboard-card p-6">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-lg">Temples ({totalCount})</h3>
             {isOwner && (
@@ -393,7 +424,7 @@ export default function DivyaDesamDetail() {
           </div>
           
           {isOwner && isAdding && (
-            <div className={`p-5 rounded-xl border mb-4 ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'}`}>
+            <div className={`p-5 rounded-xl border mb-4 shadow-sm ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/5 border-black/5'}`}>
               {/* Mode tabs */}
               <div className="flex gap-1 mb-4">
                 <button
@@ -415,6 +446,16 @@ export default function DivyaDesamDetail() {
                   }`}
                 >
                   Manual Entry
+                </button>
+                <button
+                  onClick={() => setAddMode('link')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    addMode === 'link'
+                      ? 'bg-[#0D9488] text-white'
+                      : isDark ? 'bg-white/10 text-white/70 hover:bg-white/20' : 'bg-black/5 text-[#6E6A63] hover:bg-black/10'
+                  }`}
+                >
+                  Link Entry
                 </button>
               </div>
 
@@ -438,6 +479,32 @@ export default function DivyaDesamDetail() {
                       />
                     </div>
                   </Autocomplete>
+                </div>
+              )}
+
+              {addMode === 'link' && (
+                <div className="space-y-3">
+                  <p className={`text-sm ${isDark ? 'text-white/60' : 'text-[#6E6A63]'}`}>Paste a Google Maps link (e.g. maps.app.goo.gl/...) to automatically resolve details.</p>
+                  <div className={`flex items-center px-3 py-2.5 rounded-xl border transition-colors ${
+                    isDark ? 'bg-black/20 border-white/20 focus-within:border-[#0D9488]' : 'bg-white border-black/20 focus-within:border-[#0D9488]'
+                  }`}>
+                    <Link2 className="w-4 h-4 opacity-50 mr-2 shrink-0" />
+                    <input
+                      type="url"
+                      placeholder="https://maps.app.goo.gl/..."
+                      value={linkUrl}
+                      onChange={e => setLinkUrl(e.target.value)}
+                      className="w-full bg-transparent outline-none text-sm"
+                    />
+                  </div>
+                  <button
+                    onClick={handleResolveLink}
+                    disabled={resolvingLink || !linkUrl}
+                    className="w-full py-2.5 rounded-xl bg-[#0D9488] text-white font-medium text-sm hover:bg-[#0F766E] transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {resolvingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                    Resolve Link
+                  </button>
                 </div>
               )}
 
@@ -509,10 +576,10 @@ export default function DivyaDesamDetail() {
               return (
                 <div
                   key={idx}
-                  className={`relative p-5 rounded-3xl border transition-all ${
+                  className={`relative p-5 rounded-2xl border transition-all shadow-sm ${
                     isVisited 
-                      ? (isDark ? 'bg-emerald-500/10 border-emerald-400/40' : 'bg-[#e6ffea] border-emerald-300')
-                      : (isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]')
+                      ? (isDark ? 'bg-[#0D9488]/20 border-[#0D9488]/40' : 'bg-[#0D9488]/10 border-[#0D9488]/30')
+                      : (isDark ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-black/5 border-black/5 hover:bg-black/10')
                   }`}
                 >
                   <div className="flex justify-between items-start mb-4">

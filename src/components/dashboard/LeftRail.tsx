@@ -7,13 +7,14 @@ import { useFriends } from '../../contexts/FriendsContext';
 import { useCommunities } from '../../contexts/CommunitiesContext';
 import { fetchPlaces, type UserPlace } from '../../services/places';
 import type { UserLocation } from '../../services/locations';
-import { MapPin, UserPlus, Check, X, Trash2, Link2, Copy, ChevronDown, ChevronUp, Loader2, Users, Globe, MessageSquare, HandHeart, List } from 'lucide-react';
+import { MapPin, UserPlus, Check, X, Trash2, Link2, Copy, ChevronDown, ChevronUp, Loader2, Users, Globe, MessageSquare, HandHeart } from 'lucide-react';
+import { GopuramIcon } from '../icons/GopuramIcon';
 import { getDistanceKm, normalizeDocumentId } from '../../lib/geo';
 import PublishSpaceDialog from './PublishSpaceDialog';
 import CommunityBoardDialog from './CommunityBoardDialog';
 import LeaderboardWidget from './LeaderboardWidget';
 
-export default function LeftRail() {
+export default function LeftRail({ onOpenAddTemple }: { onOpenAddTemple?: () => void } = {}) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { savedLocations, activeLocationId, selectLocation, refreshLocations } = useLocation();
@@ -39,7 +40,17 @@ export default function LeftRail() {
       .then((places) => setAllPlaces(places))
       .catch(console.error)
       .finally(() => setLoadingPins(false));
-  }, [session, pinnedListVersion]);
+  }, [session?.user, pinnedListVersion]);
+
+  useEffect(() => {
+    const handlePlacesUpdated = () => {
+      fetchPlaces()
+        .then((places) => setAllPlaces(places))
+        .catch(console.error);
+    };
+    window.addEventListener('places-updated', handlePlacesUpdated);
+    return () => window.removeEventListener('places-updated', handlePlacesUpdated);
+  }, []);
 
   useEffect(() => {
     if (isFriendNest && activeLocationId) {
@@ -79,7 +90,7 @@ export default function LeftRail() {
   return (
     <div className={`flex flex-col gap-6 h-full ${isDark ? 'text-white' : 'text-[#141414]'}`}>
       {/* Nest Progress Widget */}
-      <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+      <div className={`dashboard-card p-6`}>
         <h2 className="font-display text-xl font-semibold mb-4">
           {isFriendNest ? `${activeFriendNest.ownerName}'s Nest` : 'My Nest'}
         </h2>
@@ -112,7 +123,10 @@ export default function LeftRail() {
 
         {/* Add CTA */}
         {!isFriendNest && (
-          <button className="w-full py-3 rounded-xl bg-[#0D9488] text-white font-medium hover:bg-[#09917d] transition-colors flex items-center justify-center gap-2 mb-6">
+          <button 
+            onClick={onOpenAddTemple}
+            className="w-full py-3 rounded-xl bg-[#0D9488] text-white font-medium hover:bg-[#09917d] transition-colors flex items-center justify-center gap-2 mb-6"
+          >
             <span className="text-lg">+</span> Add to Nest
           </button>
         )}
@@ -121,11 +135,13 @@ export default function LeftRail() {
         {plannedNestTemples.length > 0 && (
           <div>
             <p className="eyebrow mb-3">Next in Nest</p>
-            <ul className={`space-y-3 text-sm ${isDark ? 'text-white/80' : 'text-[#141414]/80'}`}>
+            <ul className="space-y-3">
               {plannedNestTemples.map(temple => (
-                <li key={temple._id} className="flex items-center gap-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#0D9488]"></span>
-                  <span className="truncate">{temple.name}</span>
+                <li key={temple._id} className={`flex items-center gap-3 p-3 rounded-xl shadow-sm border ${isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-black/5 border-black/5 text-[#141414]'} transition-transform hover:-translate-y-0.5 cursor-default`}>
+                  <div className="w-8 h-8 rounded-full bg-[#0D9488]/10 flex items-center justify-center flex-shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-[#0D9488]"></span>
+                  </div>
+                  <span className="truncate font-medium text-sm">{temple.name}</span>
                 </li>
               ))}
             </ul>
@@ -136,11 +152,12 @@ export default function LeftRail() {
       <LeaderboardWidget isDark={isDark} />
 
       {/* Workspaces Section */}
-      <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+      {/* Divya Desams */}
+      <div className={`dashboard-card p-6 ${isDark ? 'bg-gradient-to-br from-[#1a1b1e] to-[#141517]' : 'bg-gradient-to-br from-white to-[#fafafa]'}`}>
         <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
-          <List className="w-4 h-4 text-[#0D9488]" /> Divya Desams
+          <GopuramIcon className="w-4 h-4 text-[#0D9488]" /> Divya Desams
         </h2>
-        <div className="space-y-2 mb-4">
+        <div className="space-y-2 mb-2">
           <a
             href="/nests"
             className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all flex items-center gap-3 ${
@@ -149,7 +166,7 @@ export default function LeftRail() {
                 : 'text-[#6E6A63] hover:bg-black/5 hover:text-black'
             }`}
           >
-            <List className="w-4 h-4 flex-shrink-0 opacity-40" />
+            <GopuramIcon className="w-4 h-4 flex-shrink-0 opacity-40" />
             <span className="truncate">Explore Lists</span>
           </a>
           <a
@@ -160,11 +177,14 @@ export default function LeftRail() {
                 : 'text-[#6E6A63] hover:bg-black/5 hover:text-black'
             }`}
           >
-            <List className="w-4 h-4 flex-shrink-0 opacity-40" />
+            <GopuramIcon className="w-4 h-4 flex-shrink-0 opacity-40" />
             <span className="truncate">My Tracked Lists</span>
           </a>
         </div>
+      </div>
 
+      {/* My sacred spaces */}
+      <div className={`dashboard-card p-6 ${isDark ? 'bg-gradient-to-br from-[#161719] to-[#111214] border-white/5 shadow-inner' : 'bg-gradient-to-br from-[#f8f9fa] to-white shadow-inner border-black/5'}`}>
         <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
           <MapPin className="w-4 h-4 text-[#0D9488]" /> My sacred spaces
         </h2>
@@ -174,14 +194,14 @@ export default function LeftRail() {
               const isActive = normalizeDocumentId(activeLocationId) === normalizeDocumentId(loc._id);
               const isPublished = loc.visibility === 'published';
               return (
-                <div
-                  key={String(normalizeDocumentId(loc._id))}
-                  className={`rounded-xl transition-all ${
-                    isActive
-                      ? (isDark ? 'bg-[#0D9488]/20' : 'bg-[#0D9488]/10')
-                      : ''
-                  }`}
-                >
+                  <div
+                    key={String(normalizeDocumentId(loc._id))}
+                    className={`rounded-xl transition-all shadow-sm border ${
+                      isActive
+                        ? (isDark ? 'bg-white/10 border-white/20' : 'bg-[#0D9488]/10 border-[#0D9488]/20')
+                        : (isDark ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-black/5 border-black/5 hover:bg-black/10')
+                    }`}
+                  >
                   <button
                     onClick={() => selectLocation(normalizeDocumentId(loc._id))}
                     className={`w-full text-left px-3 py-2.5 text-sm flex items-center gap-3 ${
@@ -227,7 +247,7 @@ export default function LeftRail() {
       <CommunitiesWidget isDark={isDark} />
 
       {/* Pinned from Explore — assign to Nest / Interest on the map */}
-      <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+      <div className={`dashboard-card p-6`}>
         <h2 className="font-display text-lg font-semibold mb-2 flex items-center gap-2">
           <MapPin className="w-4 h-4 text-[#D13B3B]" /> Pinned from Explore
         </h2>
@@ -322,7 +342,7 @@ function CommunitiesWidget({ isDark }: { isDark: boolean }) {
   };
 
   return (
-    <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+    <div className={`dashboard-card p-6`}>
       <div className="flex items-center justify-between gap-2 mb-4">
         <h2 className="font-display text-lg font-semibold flex items-center gap-2">
           <Globe className="w-4 h-4 text-[#0D9488]" />
@@ -766,7 +786,7 @@ function FriendNestsWidget({ isDark }: { isDark: boolean }) {
 
   if (loading && friendNests.length === 0) {
     return (
-      <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+      <div className={`dashboard-card p-6`}>
         <div className="flex items-center gap-2 py-2">
           <Loader2 className={`w-4 h-4 animate-spin ${isDark ? 'text-white/30' : 'text-black/20'}`} />
           <span className={`text-xs ${isDark ? 'text-white/40' : 'text-black/40'}`}>Loading friend nests...</span>
@@ -791,7 +811,7 @@ function FriendNestsWidget({ isDark }: { isDark: boolean }) {
   const remoteNests = processedNests.filter(n => !n.canOpen);
 
   return (
-    <div className={`p-6 rounded-2xl border ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5] shadow-sm'}`}>
+    <div className={`dashboard-card p-6`}>
       <h2 className="font-display text-lg font-semibold mb-4 flex items-center gap-2">
         <Users className="w-4 h-4 text-[#D13B3B]" />
         Friend's Nests

@@ -35,6 +35,10 @@ app.set('trust proxy', true);
 // Auth.js redirect base — must match the URL you open in the browser
 if (!process.env.AUTH_URL) {
   process.env.AUTH_URL = frontendOrigin;
+} else {
+  // If AUTH_URL was set including the Auth route (e.g. https://site.example.com/api/auth)
+  // strip the trailing `/api/auth` to avoid Auth.js warning about redundant basePath
+  process.env.AUTH_URL = process.env.AUTH_URL.replace(/\/api\/auth\/?$/, "");
 }
 
 // Setup Auth.js v5 route

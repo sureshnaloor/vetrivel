@@ -40,6 +40,28 @@ export const savePlace = async (place: UserPlace): Promise<UserPlace> => {
   return res.json();
 };
 
+export const addPlace = async (place: Partial<UserPlace>): Promise<UserPlace> => {
+  const res = await fetch(API_BASE, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(place),
+    credentials: 'include'
+  });
+  if (!res.ok) throw new Error('Failed to add place');
+  return res.json();
+};
+
+export const resolveMapLink = async (url: string): Promise<{ placeId: string, name: string, coordinates: {lat: number, lng: number}, address: string }> => {
+  const res = await fetch(`${API_BASE}/resolve-link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+    credentials: 'include'
+  });
+  if (!res.ok) throw new Error('Failed to resolve map link');
+  return res.json();
+};
+
 export const updatePlace = async (id: string, updates: Partial<UserPlace>): Promise<UserPlace> => {
   const res = await fetch(`${API_BASE}/${id}`, {
     method: 'PATCH',
