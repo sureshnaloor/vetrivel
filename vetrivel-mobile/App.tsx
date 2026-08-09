@@ -11,6 +11,7 @@ import {
 } from "./src/auth";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { LoginScreen } from "./src/screens/LoginScreen";
+import { ThemeProvider } from "./src/contexts/ThemeContext";
 
 function extractInviteToken(url: string): string | null {
   try {
@@ -87,26 +88,28 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider style={styles.app}>
-      <StatusBar style="dark" />
-      {session ? (
-        <NavigationContainer>
-          <View style={styles.authedRoot}>
-            <AppNavigator
-              session={session}
-              onLogout={async () => {
-                await clearAuthSession();
-                setSession(null);
-              }}
-            />
+    <ThemeProvider>
+      <SafeAreaProvider style={styles.app}>
+        <StatusBar style="dark" />
+        {session ? (
+          <NavigationContainer>
+            <View style={styles.authedRoot}>
+              <AppNavigator
+                session={session}
+                onLogout={async () => {
+                  await clearAuthSession();
+                  setSession(null);
+                }}
+              />
+            </View>
+          </NavigationContainer>
+        ) : (
+          <View style={styles.guestRoot}>
+            <LoginScreen onLoggedIn={setSession} />
           </View>
-        </NavigationContainer>
-      ) : (
-        <View style={styles.guestRoot}>
-          <LoginScreen onLoggedIn={setSession} />
-        </View>
-      )}
-    </SafeAreaProvider>
+        )}
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
 

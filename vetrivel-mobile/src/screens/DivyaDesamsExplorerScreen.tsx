@@ -22,6 +22,7 @@ import {
 import type { RootStackParamList, MainTabsParamList } from "../navigation/types";
 import type { MobileAuthSession } from "../auth";
 import { DivyaDesamFormModal } from "../components/DivyaDesamFormModal";
+import { useTheme } from "../contexts/ThemeContext";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import type { CompositeScreenProps } from "@react-navigation/native";
 
@@ -33,6 +34,7 @@ type Props = CompositeScreenProps<
 };
 
 export function DivyaDesamsExplorerScreen({ navigation, session }: Props) {
+  const { colors } = useTheme();
   const [lists, setLists] = useState<DivyaDesamList[]>([]);
   const [loading, setLoading] = useState(true);
   const [cloningId, setCloningId] = useState<string | null>(null);
@@ -115,44 +117,45 @@ export function DivyaDesamsExplorerScreen({ navigation, session }: Props) {
   const renderCard = (item: DivyaDesamList, isMine: boolean) => {
     const isAdopted = adoptedParentIds.has(item._id);
     return (
-      <View key={item._id} style={styles.cardWrapper}>
+      <View key={item._id} style={[styles.cardWrapper, { shadowColor: colors.primary }]}>
         <Pressable
-          style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+          style={({ pressed }) => [styles.card, { backgroundColor: colors.card, borderColor: colors.border }, pressed && styles.cardPressed]}
           onPress={() => navigation.navigate("DivyaDesamDetail", { id: item._id, name: item.name })}
         >
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>{item.name}</Text>
-            {item.isGlobalTemplate && <Text style={styles.badge}>Template</Text>}
+            <Text style={[styles.cardTitle, { color: colors.text }]}>{item.name}</Text>
+            {item.isGlobalTemplate && <Text style={[styles.badge, { backgroundColor: colors.primary + "1A", color: colors.primary }]}>Template</Text>}
           </View>
-          <Text style={styles.cardDesc} numberOfLines={2}>
+          <Text style={[styles.cardDesc, { color: colors.textMuted }]} numberOfLines={2}>
             {item.description || "No description provided."}
           </Text>
           
           <View style={styles.cardFooter}>
-            <Text style={styles.templeCount}>
+            <Text style={[styles.templeCount, { backgroundColor: colors.primary + "1A", color: colors.primary }]}>
               {item.temples.length} temple{item.temples.length !== 1 ? 's' : ''}
             </Text>
             
             {isMine ? (
               <View style={styles.actionRow}>
                 <Pressable
-                  style={styles.actionBtnEdit}
+                  style={[styles.actionBtnEdit, { backgroundColor: colors.border }]}
                   onPress={(e) => { e.stopPropagation(); setEditingList(item); setIsModalVisible(true); }}
                 >
-                  <Text style={styles.actionBtnText}>Edit</Text>
+                  <Text style={[styles.actionBtnText, { color: colors.text }]}>Edit</Text>
                 </Pressable>
                 <Pressable
-                  style={styles.actionBtnDelete}
+                  style={[styles.actionBtnDelete, { backgroundColor: colors.error + "1A" }]}
                   onPress={(e) => { e.stopPropagation(); handleDelete(item._id, item.name); }}
                 >
-                  <Text style={styles.actionBtnDeleteText}>Delete</Text>
+                  <Text style={[styles.actionBtnDeleteText, { color: colors.error }]}>Delete</Text>
                 </Pressable>
               </View>
             ) : (
               <Pressable
                 style={[
                   styles.adoptBtn,
-                  isAdopted && styles.adoptBtnDisabled,
+                  { backgroundColor: colors.primary },
+                  isAdopted && { backgroundColor: colors.textMuted },
                 ]}
                 disabled={isAdopted || cloningId === item._id}
                 onPress={(e) => { e.stopPropagation(); handleClone(item._id); }}
@@ -174,22 +177,22 @@ export function DivyaDesamsExplorerScreen({ navigation, session }: Props) {
 
   if (loading && lists.length === 0) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#0D9488" />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         
         {/* My Lists Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My Tracked Lists</Text>
-          <Text style={styles.sectionSub}>Lists you've created or adopted.</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>My Tracked Lists</Text>
+          <Text style={[styles.sectionSub, { color: colors.textMuted }]}>Lists you've created or adopted.</Text>
           {myLists.length === 0 ? (
-            <Text style={styles.emptyText}>You haven't created or adopted any lists yet.</Text>
+            <Text style={[styles.emptyText, { color: colors.textMuted, backgroundColor: colors.card, borderColor: colors.border }]}>You haven't created or adopted any lists yet.</Text>
           ) : (
             myLists.map(list => renderCard(list, true))
           )}
@@ -197,10 +200,10 @@ export function DivyaDesamsExplorerScreen({ navigation, session }: Props) {
 
         {/* Explore Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Explore Templates</Text>
-          <Text style={styles.sectionSub}>Adopt curated templates to start tracking.</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Explore Templates</Text>
+          <Text style={[styles.sectionSub, { color: colors.textMuted }]}>Adopt curated templates to start tracking.</Text>
           {sourceLists.length === 0 ? (
-            <Text style={styles.emptyText}>No curated lists published yet.</Text>
+            <Text style={[styles.emptyText, { color: colors.textMuted, backgroundColor: colors.card, borderColor: colors.border }]}>No curated lists published yet.</Text>
           ) : (
             sourceLists.map(list => renderCard(list, false))
           )}
@@ -210,7 +213,7 @@ export function DivyaDesamsExplorerScreen({ navigation, session }: Props) {
 
       {/* Floating Action Button */}
       <Pressable 
-        style={styles.fab} 
+        style={[styles.fab, { backgroundColor: colors.primary, shadowColor: colors.primary }]} 
         onPress={() => { setEditingList(null); setIsModalVisible(true); }}
       >
         <Text style={styles.fabIcon}>+</Text>

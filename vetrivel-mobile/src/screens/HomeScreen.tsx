@@ -18,6 +18,7 @@ import { AddTempleModal } from "../components/AddTempleModal";
 import type { MobileAuthSession } from "../auth";
 import type { LatLng } from "../lib/geo";
 import type { RootStackParamList } from "../navigation/types";
+import { useTheme } from "../contexts/ThemeContext";
 
 type NavProps = NativeStackScreenProps<RootStackParamList, "Home">;
 
@@ -30,6 +31,7 @@ type Props = NavProps & {
 const FALLBACK_CENTER: LatLng = { lat: 20.5937, lng: 78.9629 };
 
 export function HomeScreen({ navigation, session, onLogout }: Props) {
+  const { colors } = useTheme();
   const [locations, setLocations] = useState<UserLocation[]>([]);
   const [unscopedCount, setUnscopedCount] = useState(0);
   const [userPos, setUserPos] = useState<LatLng | null>(null);
@@ -122,25 +124,25 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
         <View style={styles.headerText}>
-          <Text style={styles.email}>{session.user.email}</Text>
+          <Text style={[styles.email, { color: colors.textMuted }]}>{session.user.email}</Text>
           {locationPermission === false ? (
-            <Text style={styles.hint}>
+            <Text style={[styles.hint, { color: colors.warning }]}>
               Location off — map centers on your first saved space. Enable location in Settings for
               “near you”.
             </Text>
           ) : null}
           {unscopedCount > 0 ? (
-            <Text style={styles.hint}>
+            <Text style={[styles.hint, { color: colors.warning }]}>
               {unscopedCount} place{unscopedCount === 1 ? "" : "s"} not linked to a space (manage on
               the web dashboard).
             </Text>
@@ -148,15 +150,15 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
         </View>
         <View style={styles.headerActions}>
           <Pressable
-            style={styles.addSpaceButton}
+            style={[styles.addSpaceButton, { backgroundColor: colors.primary }]}
             onPress={() => navigation.navigate("CreateSpace")}
           >
-            <Text style={styles.addSpaceText}>Add space</Text>
+            <Text style={[styles.addSpaceText, { color: colors.background }]}>Add space</Text>
           </Pressable>
         </View>
       </View>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: colors.error }]}>{error}</Text> : null}
 
       <FlatList
         data={locations}
@@ -166,7 +168,7 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
         }
         ListHeaderComponent={
           <View style={styles.listHeader}>
-            <Text style={styles.mapCaption}>Your spaces & location</Text>
+            <Text style={[styles.mapCaption, { color: colors.text }]}>Your spaces & location</Text>
             <SpaceMap
               height={220}
               center={mapCenter}
@@ -177,7 +179,7 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
                 if (loc) openNest(loc);
               }}
             />
-            <Text style={styles.sectionTitle}>My spaces ({locations.length})</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>My spaces ({locations.length})</Text>
           </View>
         }
         contentContainerStyle={[
@@ -185,29 +187,37 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
           locations.length === 0 && styles.emptyList,
         ]}
         ListEmptyComponent={
-          <Text style={styles.emptyText}>
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
             No saved spaces yet. Tap “Add space” above to create one here, or add spaces on the web
             dashboard and pull to refresh.
           </Text>
         }
         renderItem={({ item }) => (
           <Pressable
-            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            style={({ pressed }) => [
+              styles.card, 
+              { backgroundColor: colors.card, borderColor: colors.border },
+              pressed && styles.cardPressed
+            ]}
             onPress={() => openNest(item)}
           >
-            <Text style={styles.cardTitle}>{item.name}</Text>
-            {item.address ? <Text style={styles.cardMeta}>{item.address}</Text> : null}
-            <Text style={styles.cardChevron}>Open map & temples →</Text>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>{item.name}</Text>
+            {item.address ? <Text style={[styles.cardMeta, { color: colors.textMuted }]}>{item.address}</Text> : null}
+            <Text style={[styles.cardChevron, { color: colors.primary }]}>Open map & temples →</Text>
           </Pressable>
         )}
       />
       
       {/* Floating Action Button (FAB) */}
       <Pressable 
-        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}
+        style={({ pressed }) => [
+          styles.fab, 
+          { backgroundColor: colors.primary },
+          pressed && styles.fabPressed
+        ]}
         onPress={() => setIsAddTempleOpen(true)}
       >
-        <Text style={styles.fabText}>+ Add Temple</Text>
+        <Text style={[styles.fabText, { color: colors.background }]}>+ Add Temple</Text>
       </Pressable>
 
       <AddTempleModal
@@ -221,7 +231,7 @@ export function HomeScreen({ navigation, session, onLogout }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 8, backgroundColor: "#F6F3ED" },
+  container: { flex: 1, paddingTop: 8 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row",

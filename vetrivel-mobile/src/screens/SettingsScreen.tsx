@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, Switch } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import type { MobileAuthSession } from "../auth";
+import { useTheme } from "../contexts/ThemeContext";
 
 type NavProps = NativeStackScreenProps<RootStackParamList, "Settings">;
 
@@ -12,33 +13,33 @@ type Props = NavProps & {
 };
 
 export function SettingsScreen({ session, onLogout }: Props) {
-  const [isDarkTheme, setIsDarkTheme] = useState(false);
+  const { isDarkTheme, setDarkTheme, colors } = useTheme();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <View style={styles.card}>
-          <Text style={styles.label}>Email</Text>
-          <Text style={styles.value}>{session.user.email}</Text>
+        <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Account</Text>
+        <View style={[styles.card, { backgroundColor: colors.card }]}>
+          <Text style={[styles.label, { color: colors.text }]}>Email</Text>
+          <Text style={[styles.value, { color: colors.textMuted }]}>{session.user.email}</Text>
         </View>
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Preferences</Text>
-        <View style={[styles.card, styles.row]}>
-          <Text style={styles.label}>Dark Theme</Text>
+        <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Preferences</Text>
+        <View style={[styles.card, styles.row, { backgroundColor: colors.card }]}>
+          <Text style={[styles.label, { color: colors.text }]}>Dark Theme</Text>
           <Switch
             value={isDarkTheme}
-            onValueChange={setIsDarkTheme}
-            trackColor={{ false: "#d1d5db", true: "#0D9488" }}
+            onValueChange={setDarkTheme}
+            trackColor={{ false: "#d1d5db", true: colors.primary }}
           />
         </View>
       </View>
 
       <View style={styles.section}>
         <Pressable
-          style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.logoutBtn, { backgroundColor: colors.card }, pressed && styles.pressed]}
           onPress={onLogout}
         >
           <Text style={styles.logoutBtnText}>Logout</Text>

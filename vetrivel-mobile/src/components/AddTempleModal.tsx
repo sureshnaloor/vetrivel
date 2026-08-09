@@ -23,9 +23,10 @@ interface Props {
   accessToken: string;
   defaultLocationId?: string;
   onTempleAdded?: () => void;
+  onCustomSave?: (data: { placeId: string; name: string; coordinates: { lat: number; lng: number }; address?: string }) => void;
 }
 
-export function AddTempleModal({ visible, onClose, accessToken, defaultLocationId, onTempleAdded }: Props) {
+export function AddTempleModal({ visible, onClose, accessToken, defaultLocationId, onTempleAdded, onCustomSave }: Props) {
   const [locations, setLocations] = useState<UserLocation[]>([]);
   const [activeNestId, setActiveNestId] = useState<string | null>(defaultLocationId || null);
   const [isCreatingNest, setIsCreatingNest] = useState(false);
@@ -104,6 +105,17 @@ export function AddTempleModal({ visible, onClose, accessToken, defaultLocationI
     lng: number,
     address?: string
   ) => {
+    if (onCustomSave) {
+      onCustomSave({
+        placeId: placeId || `manual_${Date.now()}`,
+        name,
+        coordinates: { lat, lng },
+        address,
+      });
+      onClose();
+      return;
+    }
+
     try {
       setLoading(true);
       let targetLocationId = activeNestId;

@@ -12,6 +12,7 @@ import { DivyaDesamsExplorerScreen } from "../screens/DivyaDesamsExplorerScreen"
 import { DivyaDesamDetailScreen } from "../screens/DivyaDesamDetailScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 import type { RootStackParamList, MainTabsParamList } from "./types";
+import { useTheme } from "../contexts/ThemeContext";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabsParamList>();
@@ -22,13 +23,22 @@ type Props = {
 };
 
 function MainTabs({ session, onLogout }: Props) {
+  const { colors, isDarkTheme } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarActiveTintColor: "#D13B3B",
-        tabBarInactiveTintColor: "#666",
-        headerTintColor: "#D13B3B",
-        headerTitleStyle: { fontWeight: "600" },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: {
+          backgroundColor: colors.card,
+          borderTopColor: colors.border,
+        },
+        headerTintColor: colors.primary,
+        headerStyle: {
+          backgroundColor: colors.card,
+        },
+        headerTitleStyle: { fontWeight: "600", color: colors.text },
         headerShadowVisible: false,
       }}
     >
@@ -49,12 +59,18 @@ function MainTabs({ session, onLogout }: Props) {
 }
 
 export function AppNavigator({ session, onLogout }: Props) {
+  const { colors } = useTheme();
+
   return (
     <Stack.Navigator
       screenOptions={{
-        headerTintColor: "#D13B3B",
-        headerTitleStyle: { fontWeight: "600" },
+        headerTintColor: colors.primary,
+        headerStyle: {
+          backgroundColor: colors.card,
+        },
+        headerTitleStyle: { fontWeight: "600", color: colors.text },
         headerShadowVisible: false,
+        contentStyle: { backgroundColor: colors.background },
       }}
     >
       <Stack.Screen name="MainTabs" options={{ headerShown: false }}>
