@@ -11,7 +11,8 @@ import {
 } from "./src/auth";
 import { AppNavigator } from "./src/navigation/AppNavigator";
 import { LoginScreen } from "./src/screens/LoginScreen";
-import { ThemeProvider } from "./src/contexts/ThemeContext";
+import { ThemeProvider, useTheme } from "./src/contexts/ThemeContext";
+import { DefaultTheme, DarkTheme } from "@react-navigation/native";
 
 function extractInviteToken(url: string): string | null {
   try {
@@ -32,11 +33,12 @@ function extractInviteToken(url: string): string | null {
   return null;
 }
 
-export default function App() {
+function AppContent() {
   const [session, setSession] = useState<MobileAuthSession | null>(null);
   const [booting, setBooting] = useState(true);
   const [pendingInviteToken, setPendingInviteToken] = useState<string | null>(null);
   const processingInviteTokenRef = useRef<string | null>(null);
+  const { isDarkTheme, colors } = useTheme();
 
   useEffect(() => {
     getStoredAuthSession()
@@ -80,44 +82,69 @@ export default function App() {
   if (booting) {
     return (
       <SafeAreaProvider>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" />
+        <View style={[styles.centered, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
       </SafeAreaProvider>
     );
   }
 
+  // Define custom themes for React Navigation to match our design system
+  const navTheme = isDarkTheme ? {
+    ...DarkTheme,
+    colors: {
+      ...DarkTheme.colors,
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+    },
+  } : {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+    },
+  };
+
+  return (
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar style={isDarkTheme ? "light" : "dark"} />
+      {session ? (
+        <NavigationContainer theme={navTheme}>
+          <View style={styles.authedRoot}>
+            <AppNavigator
+              session={session}
+              onLogout={async () => {
+                await clearAuthSession();
+                setSession(null);
+              }}
+            />
+          </View>
+        </NavigationContainer>
+      ) : (
+        <View style={[styles.guestRoot, { backgroundColor: colors.background }]}>
+          <LoginScreen onLoggedIn={setSession} />
+        </View>
+      )}
+    </SafeAreaProvider>
+  );
+}
+
+export default function App() {
   return (
     <ThemeProvider>
-      <SafeAreaProvider style={styles.app}>
-        <StatusBar style="dark" />
-        {session ? (
-          <NavigationContainer>
-            <View style={styles.authedRoot}>
-              <AppNavigator
-                session={session}
-                onLogout={async () => {
-                  await clearAuthSession();
-                  setSession(null);
-                }}
-              />
-            </View>
-          </NavigationContainer>
-        ) : (
-          <View style={styles.guestRoot}>
-            <LoginScreen onLoggedIn={setSession} />
-          </View>
-        )}
-      </SafeAreaProvider>
+      <AppContent />
     </ThemeProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  app: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
   authedRoot: {
     flex: 1,
   },
@@ -126,12 +153,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 16,
-    backgroundColor: "#fff",
   },
   centered: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#fff",
   },
 });

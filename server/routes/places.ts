@@ -134,10 +134,10 @@ placesRouter.post("/resolve-link", async (req, res) => {
 
   try {
     // 1. Fetch the url to follow redirects and get HTML
-    // Set a modern browser User-Agent and Accept-Language to prevent Google from serving a consent or captcha page
+    // Use Facebook crawler User-Agent to bypass Google Maps bot protection and get proper OpenGraph metadata
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+        "User-Agent": "facebookexternalhit/1.1",
         "Accept-Language": "en-US,en;q=0.9"
       }
     });
@@ -153,6 +153,19 @@ placesRouter.post("/resolve-link", async (req, res) => {
     const titleMatch = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]+)"/i);
     if (titleMatch && titleMatch[1]) {
       extractedName = decodeURIComponent(titleMatch[1].replace(/&#x27;/g, "'").replace(/&amp;/g, "&").trim());
+      extractedName = extractedName.replace(/ - Google Maps$/i, "").trim();
+      if (extractedName === "Google Maps") extractedName = "";
+    }
+
+    // If og:title was generic, try extracting from the q= parameter in the preloaded search link
+    if (!extractedName) {
+      const qLinkMatch = html.match(/q=([^&"]+)/);
+      if (qLinkMatch && qLinkMatch[1]) {
+        extractedName = decodeURIComponent(qLinkMatch[1].replace(/\+/g, ' ').replace(/&amp;/g, '&'));
+        // Clean up Plus codes if present
+        extractedName = extractedName.replace(/^[A-Z0-9]{4}\+[A-Z0-9]{2,3}\s+/, '');
+        extractedName = extractedName.split(',')[0].trim();
+      }
     }
 
     const imageMatch = html.match(/<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"/i);
@@ -164,8 +177,6 @@ placesRouter.post("/resolve-link", async (req, res) => {
         extractedLng = parseFloat(centerMatch[2]);
       }
     }
-
-    // Fallback: Parse from URL if HTML parsing failed
     if (!extractedName) {
       const placeMatch = finalUrl.match(/\/place\/([^\/?]+)/);
       if (placeMatch && placeMatch[1]) {
