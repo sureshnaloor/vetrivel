@@ -101,12 +101,11 @@ export const removeFriend = async (id: string): Promise<void> => {
 
 // ─── Invite Links ────────────────────────────────────────────────────────────
 
-export const generateInviteLink = async (toEmail: string): Promise<string> => {
+export const generateInviteLink = async (): Promise<string> => {
   const res = await fetch(`${API_BASE}/invite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ toEmail }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => null);

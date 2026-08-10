@@ -549,7 +549,6 @@ function FriendsWidget({ isDark }: { isDark: boolean }) {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sendSuccess, setSendSuccess] = useState<string | null>(null);
   const [showSent, setShowSent] = useState(false);
-  const [inviteEmailInput, setInviteEmailInput] = useState('');
   const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
@@ -572,15 +571,10 @@ function FriendsWidget({ isDark }: { isDark: boolean }) {
   };
 
   const handleGenerateLink = async () => {
-    const inviteEmail = inviteEmailInput.trim().toLowerCase();
-    if (!inviteEmail) {
-      setSendError('Enter the recipient email before generating an invite link');
-      return;
-    }
     setGeneratingLink(true);
     setSendError(null);
     try {
-      const token = await getInviteLink(inviteEmail);
+      const token = await getInviteLink();
       setInviteToken(token);
     } catch (e) {
       setSendError(e instanceof Error ? e.message : 'Failed to generate invite link');
@@ -632,37 +626,48 @@ function FriendsWidget({ isDark }: { isDark: boolean }) {
         {sendSuccess && <p className="text-[10px] text-green-500 mt-1">{sendSuccess}</p>}
       </div>
 
-      {/* Invite Link */}
+      {/* Magic Invite Link */}
       <div className="mb-4">
         {!inviteToken ? (
-          <div className="space-y-1.5">
-            <input
-              type="email"
-              placeholder="Invite link for email..."
-              value={inviteEmailInput}
-              onChange={(e) => { setInviteEmailInput(e.target.value); setSendError(null); }}
-              className={`w-full px-3 py-2 rounded-lg text-xs border outline-none transition-colors ${isDark ? 'bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-white/25' : 'bg-black/[0.02] border-black/10 text-[#141414] placeholder:text-black/30 focus:border-black/20'}`}
-            />
-            <button
-              onClick={handleGenerateLink}
-              disabled={generatingLink || !inviteEmailInput.trim()}
-              className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] border border-dashed transition-colors disabled:opacity-40 ${isDark ? 'border-white/15 text-white/50 hover:text-white/70 hover:border-white/25' : 'border-black/15 text-[#6E6A63] hover:text-[#141414] hover:border-black/25'}`}
-            >
-              {generatingLink ? <Loader2 className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-              Generate invite link
-            </button>
-          </div>
+          <button
+            onClick={handleGenerateLink}
+            disabled={generatingLink}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-[11px] border border-dashed font-medium transition-all disabled:opacity-50 ${isDark ? 'border-white/20 text-white/60 hover:text-white hover:border-white/35 hover:bg-white/5' : 'border-black/20 text-[#6E6A63] hover:text-[#141414] hover:border-black/30 hover:bg-black/[0.02]'}`}
+          >
+            {generatingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+            Generate invite link
+          </button>
         ) : (
-          <div className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] ${isDark ? 'bg-white/5' : 'bg-black/[0.03]'}`}>
-            <Link2 className="w-3 h-3 flex-shrink-0 opacity-40" />
-            <span className="truncate flex-1 opacity-60">Invite for {inviteEmailInput.trim()}</span>
-            <button
-              onClick={handleCopyLink}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${copiedLink ? 'text-green-500' : isDark ? 'text-white/60 hover:text-white' : 'text-[#6E6A63] hover:text-[#141414]'}`}
-            >
-              <Copy className="w-3 h-3" />
-              {copiedLink ? 'Copied!' : 'Copy'}
-            </button>
+          <div className={`rounded-lg border p-3 space-y-2 ${isDark ? 'bg-white/5 border-white/10' : 'bg-black/[0.02] border-black/8'}`}>
+            <div className="flex items-center gap-1.5">
+              <Link2 className="w-3 h-3 flex-shrink-0 text-[#0D9488]" />
+              <span className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? 'text-white/50' : 'text-[#6E6A63]'}`}>Magic invite link ready</span>
+            </div>
+            <p className={`text-[10px] leading-relaxed ${isDark ? 'text-white/40' : 'text-black/40'}`}>
+              Share this link via WhatsApp, SMS, or any channel. <strong>One-time use</strong> — expires in 7 days.
+            </p>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleCopyLink}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-semibold transition-all ${
+                  copiedLink
+                    ? 'bg-green-500/15 text-green-500 border border-green-500/30'
+                    : isDark
+                    ? 'bg-[#0D9488]/20 text-[#0D9488] border border-[#0D9488]/30 hover:bg-[#0D9488]/30'
+                    : 'bg-[#0D9488]/10 text-[#0D9488] border border-[#0D9488]/25 hover:bg-[#0D9488]/20'
+                }`}
+              >
+                <Copy className="w-3 h-3" />
+                {copiedLink ? 'Copied!' : 'Copy link'}
+              </button>
+              <button
+                onClick={() => { setInviteToken(null); setCopiedLink(false); }}
+                title="Generate a new link"
+                className={`px-2.5 py-2 rounded-lg text-[10px] transition-colors ${isDark ? 'text-white/30 hover:text-white/60 hover:bg-white/5' : 'text-black/30 hover:text-black/60 hover:bg-black/5'}`}
+              >
+                New
+              </button>
+            </div>
           </div>
         )}
       </div>

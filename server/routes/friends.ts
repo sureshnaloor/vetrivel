@@ -418,36 +418,21 @@ friendsRouter.delete("/:id", async (req, res) => {
 });
 
 // ─── POST /api/friends/invite ────────────────────────────────────────────────
-// Generate a single-use invite link token bound to one recipient email
+// Generate a single-use magic link — no recipient email required
 friendsRouter.post("/invite", async (req, res) => {
   try {
     const user = (req as any).user;
-    const { toEmail } = req.body;
-
-    if (!toEmail || typeof toEmail !== "string") {
-      return res.status(400).json({ error: "Recipient email is required" });
-    }
-
-    const normalizedTo = toEmail.trim().toLowerCase();
-    if (!normalizedTo) {
-      return res.status(400).json({ error: "Recipient email is required" });
-    }
-
-    if (normalizedTo === user.email.toLowerCase()) {
-      return res.status(400).json({ error: "You cannot invite yourself" });
-    }
 
     const col = await getInvitesCol();
 
-    // Always generate a fresh single-use token
-    const token = crypto.randomBytes(16).toString("hex");
+    // Generate a cryptographically random single-use token
+    const token = crypto.randomBytes(20).toString("hex");
     const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7); // 7 day expiry
+    expiresAt.setDate(expiresAt.getDate() + 7); // valid for 7 days
 
     await col.insertOne({
       fromEmail: user.email,
       fromName: user.name || user.email,
-      toEmail: normalizedTo,
       token,
       expiresAt,
       usedAt: null,
@@ -462,7 +447,7 @@ friendsRouter.post("/invite", async (req, res) => {
 });
 
 // ─── POST /api/friends/invite/accept ─────────────────────────────────────────
-// Accept an invite link by providing the token
+// Accept a magic invite link — anyone with the token can use it (once)
 friendsRouter.post("/invite/accept", async (req, res) => {
   try {
     const user = (req as any).user;
@@ -483,10 +468,6 @@ friendsRouter.post("/invite/accept", async (req, res) => {
       return res.status(404).json({ error: "Invalid or expired invite link" });
     }
 
-    if (String(invite.toEmail).toLowerCase() !== user.email.toLowerCase()) {
-      return res.status(403).json({ error: "This invite was sent to another email" });
-    }
-
     // Cannot accept your own invite
     if (invite.fromEmail.toLowerCase() === user.email.toLowerCase()) {
       return res.status(400).json({ error: "You cannot accept your own invite" });
@@ -503,13 +484,14 @@ friendsRouter.post("/invite/accept", async (req, res) => {
     });
 
     if (existing) {
+      // Mark token as used regardless
+      await invitesCol.updateOne(
+        { _id: invite._id },
+        { $set: { usedAt: new Date(), usedByEmail: user.email } }
+      );
       if (existing.status === "accepted") {
-        await invitesCol.updateOne(
-          { _id: invite._id },
-          { $set: { usedAt: new Date(), usedByEmail: user.email } }
-        );
         await autoFollowNearbyNestsForFriendship(invite.fromEmail, user.email);
-        return res.json({ success: true, message: "You are already friends" });
+        return res.json({ success: true, message: "You are already friends!" });
       }
       if (existing.status === "pending") {
         // Auto-accept the pending request
@@ -523,12 +505,8 @@ friendsRouter.post("/invite/accept", async (req, res) => {
             },
           }
         );
-        await invitesCol.updateOne(
-          { _id: invite._id },
-          { $set: { usedAt: new Date(), usedByEmail: user.email } }
-        );
         await autoFollowNearbyNestsForFriendship(invite.fromEmail, user.email);
-        return res.json({ success: true, message: "Friend request accepted via invite" });
+        return res.json({ success: true, message: "Friend request accepted via invite!" });
       }
     }
 
@@ -558,6 +536,7 @@ friendsRouter.post("/invite/accept", async (req, res) => {
 
     await friendsCol.insertOne(newFriend);
 
+    // Mark token as used — it cannot be reused
     await invitesCol.updateOne(
       { _id: invite._id },
       { $set: { usedAt: new Date(), usedByEmail: user.email } }
