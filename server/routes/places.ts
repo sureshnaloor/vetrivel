@@ -123,8 +123,51 @@ placesRouter.get("/nearby", async (req, res) => {
   }
 });
 
+// GET /api/places/search?q=...&lat=...&lng=...
+// Google Places Text Search — powers the "Search" tab in mobile AddTempleModal
+placesRouter.get("/search", async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (!q) return res.status(400).json({ error: "q is required" });
+
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: "Google Maps API Key not configured" });
+
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+
+  try {
+    const url = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+    url.searchParams.set("query", q);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      url.searchParams.set("location", `${lat},${lng}`);
+      url.searchParams.set("radius", "50000"); // 50km location bias
+    }
+    url.searchParams.set("key", apiKey);
+
+    const gRes = await fetch(url.toString());
+    const data = await gRes.json() as any;
+
+    if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
+      return res.status(502).json({ error: data.error_message || data.status });
+    }
+
+    const results = (data.results || []).slice(0, 10).map((r: any) => ({
+      placeId: r.place_id || "",
+      name: r.name || "",
+      address: r.formatted_address || r.vicinity || "",
+      lat: r.geometry?.location?.lat ?? 0,
+      lng: r.geometry?.location?.lng ?? 0,
+    }));
+
+    res.json({ results });
+  } catch (e) {
+    console.error("Error in /api/places/search:", e);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 // POST /api/places/resolve-link
-// Resolves a Google Maps link (e.g. short link) and returns parsed place info.
+// Resolves a Google/Apple Maps link and returns parsed place info.
 placesRouter.post("/resolve-link", async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ error: "URL is required" });
@@ -132,124 +175,183 @@ placesRouter.post("/resolve-link", async (req, res) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY;
   if (!apiKey) return res.status(503).json({ error: "Google Maps API Key not configured" });
 
+  // ── Helper: extract coords + name from a fully-expanded URL ────────────────
+  function parseExpandedUrl(u: string): { name: string; lat: number; lng: number; placeId: string } {
+    let name = "";
+    let lat = 0;
+    let lng = 0;
+    let placeId = "";
+
+    // Place ID directly in URL: /maps/place/...?...&ftid=0x...  or ChIJ... in pb= param
+    const ftidMatch = u.match(/[?&]ftid=([^&]+)/);
+    if (ftidMatch) placeId = decodeURIComponent(ftidMatch[1]);
+
+    // Name from /place/<name>/ path segment
+    const placePathMatch = u.match(/\/place\/([^/@?]+)/);
+    if (placePathMatch) {
+      name = decodeURIComponent(placePathMatch[1].replace(/\+/g, " "));
+    }
+
+    // Coordinates from @lat,lng,zoom pattern
+    const atMatch = u.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (atMatch) { lat = parseFloat(atMatch[1]); lng = parseFloat(atMatch[2]); }
+
+    // Coordinates from !3d!4d pattern (very common in Android Google Maps links)
+    if (!lat || !lng) {
+      const ddMatch = u.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+      if (ddMatch) { lat = parseFloat(ddMatch[1]); lng = parseFloat(ddMatch[2]); }
+    }
+
+    // q= parameter (Apple Maps / some Google links)
+    if (!name) {
+      const qMatch = u.match(/[?&]q=([^&]+)/);
+      if (qMatch) name = decodeURIComponent(qMatch[1].replace(/\+/g, " ")).split(",")[0].trim();
+    }
+
+    // ll= parameter (Apple Maps)
+    if (!lat || !lng) {
+      const llMatch = u.match(/[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (llMatch) { lat = parseFloat(llMatch[1]); lng = parseFloat(llMatch[2]); }
+    }
+
+    return { name, lat, lng, placeId };
+  }
+
+  // ── Helper: extract from HTML ───────────────────────────────────────────────
+  function parseHtml(html: string, finalUrl: string): { name: string; lat: number; lng: number } {
+    let name = "";
+    let lat = 0;
+    let lng = 0;
+
+    // og:title
+    const ogTitle = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]+)"/i);
+    if (ogTitle?.[1]) {
+      name = decodeURIComponent(ogTitle[1].replace(/&#x27;/g, "'").replace(/&amp;/g, "&").trim());
+      name = name.replace(/ - Google Maps$/i, "").trim();
+      if (name === "Google Maps" || name === "Maps") name = "";
+    }
+
+    // og:image has center=lat,lng
+    const ogImage = html.match(/<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"/i);
+    if (ogImage?.[1]) {
+      const imgUrl = decodeURIComponent(ogImage[1].replace(/&amp;/g, "&"));
+      const centerMatch = imgUrl.match(/center=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+      if (centerMatch) { lat = parseFloat(centerMatch[1]); lng = parseFloat(centerMatch[2]); }
+    }
+
+    // Fallback name from q= in HTML body
+    if (!name) {
+      const qHtml = html.match(/[?&]q=([^&"]+)/);
+      if (qHtml?.[1]) {
+        name = decodeURIComponent(qHtml[1].replace(/\+/g, " ").replace(/&amp;/g, "&"));
+        name = name.replace(/^[A-Z0-9]{4}\+[A-Z0-9]{2,3}\s+/, "").split(",")[0].trim();
+      }
+    }
+
+    // Fallback coords from expanded URL
+    if (!lat || !lng) {
+      const parsed = parseExpandedUrl(finalUrl);
+      if (!lat && parsed.lat) lat = parsed.lat;
+      if (!lng && parsed.lng) lng = parsed.lng;
+      if (!name && parsed.name) name = parsed.name;
+    }
+
+    return { name, lat, lng };
+  }
+
   try {
-    // 1. Fetch the url to follow redirects and get HTML
-    // Use Facebook crawler User-Agent to bypass Google Maps bot protection and get proper OpenGraph metadata
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "facebookexternalhit/1.1",
-        "Accept-Language": "en-US,en;q=0.9"
-      }
-    });
-    const finalUrl = response.url;
-    const html = await response.text();
+    // ── Strategy 1: try to expand short URL with multiple UA options ─────────
+    const USER_AGENTS = [
+      "facebookexternalhit/1.1",      // returns OG meta — best for iOS Apple Maps & Google Maps
+      "Googlebot/2.1",                 // sometimes bypasses bot-check differently
+      "WhatsApp/2.23 A",               // mobile UA — Google serves different redirect
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/124",
+    ];
 
-    // 2. Extract name and coordinates
-    let extractedName = "";
-    let extractedLat = 0;
-    let extractedLng = 0;
+    let html = "";
+    let finalUrl = url;
 
-    // Try to extract from HTML meta tags first (most reliable for iOS shared links)
-    const titleMatch = html.match(/<meta\s+(?:property|name)="og:title"\s+content="([^"]+)"/i);
-    if (titleMatch && titleMatch[1]) {
-      extractedName = decodeURIComponent(titleMatch[1].replace(/&#x27;/g, "'").replace(/&amp;/g, "&").trim());
-      extractedName = extractedName.replace(/ - Google Maps$/i, "").trim();
-      if (extractedName === "Google Maps") extractedName = "";
-    }
-
-    // If og:title was generic, try extracting from the q= parameter in the preloaded search link
-    if (!extractedName) {
-      const qLinkMatch = html.match(/q=([^&"]+)/);
-      if (qLinkMatch && qLinkMatch[1]) {
-        extractedName = decodeURIComponent(qLinkMatch[1].replace(/\+/g, ' ').replace(/&amp;/g, '&'));
-        // Clean up Plus codes if present
-        extractedName = extractedName.replace(/^[A-Z0-9]{4}\+[A-Z0-9]{2,3}\s+/, '');
-        extractedName = extractedName.split(',')[0].trim();
+    for (const ua of USER_AGENTS) {
+      try {
+        const resp = await fetch(url, {
+          headers: { "User-Agent": ua, "Accept-Language": "en-US,en;q=0.9" },
+          redirect: "follow",
+        });
+        finalUrl = resp.url;
+        html = await resp.text();
+        // Stop if we got a real Maps page (not a CAPTCHA/bot-check page)
+        if (finalUrl.includes("google.com/maps") || finalUrl.includes("maps.apple.com")) break;
+      } catch {
+        // try next UA
       }
     }
 
-    const imageMatch = html.match(/<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"/i);
-    if (imageMatch && imageMatch[1]) {
-      const imgUrl = decodeURIComponent(imageMatch[1].replace(/&amp;/g, "&"));
-      const centerMatch = imgUrl.match(/center=(-?\d+\.\d+),(-?\d+\.\d+)/);
-      if (centerMatch) {
-        extractedLat = parseFloat(centerMatch[1]);
-        extractedLng = parseFloat(centerMatch[2]);
-      }
-    }
-    if (!extractedName) {
-      const placeMatch = finalUrl.match(/\/place\/([^\/?]+)/);
-      if (placeMatch && placeMatch[1]) {
-        extractedName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
-      } else {
-        const searchMatch = finalUrl.match(/\/search\/([^\/?]+)/);
-        if (searchMatch && searchMatch[1]) {
-          extractedName = decodeURIComponent(searchMatch[1].replace(/\+/g, ' '));
-        } else {
-          const qMatch = finalUrl.match(/[?&]q=([^&]+)/);
-          if (qMatch && qMatch[1]) {
-            extractedName = decodeURIComponent(qMatch[1].replace(/\+/g, ' '));
-          }
-        }
-      }
-    }
+    // ── Strategy 2: parse fully expanded URL for coords + name + placeId ─────
+    const fromUrl = parseExpandedUrl(finalUrl);
 
-    if (!extractedLat || !extractedLng) {
-      const atMatch = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-      if (atMatch) {
-        extractedLat = parseFloat(atMatch[1]);
-        extractedLng = parseFloat(atMatch[2]);
-      } else {
-        const dMatch = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-        if (dMatch) {
-          extractedLat = parseFloat(dMatch[1]);
-          extractedLng = parseFloat(dMatch[2]);
-        } else {
-          const llMatch = finalUrl.match(/[?&]ll=(-?\d+\.\d+),(-?\d+\.\d+)/);
-          if (llMatch) {
-            extractedLat = parseFloat(llMatch[1]);
-            extractedLng = parseFloat(llMatch[2]);
-          }
-        }
+    // ── Strategy 3: parse HTML for og:title + og:image coords ────────────────
+    const fromHtml = html ? parseHtml(html, finalUrl) : { name: "", lat: 0, lng: 0 };
+
+    // Merge: prefer HTML name (usually cleaner), URL coords (more reliable)
+    const extractedName = fromHtml.name || fromUrl.name;
+    const extractedLat  = fromUrl.lat  || fromHtml.lat;
+    const extractedLng  = fromUrl.lng  || fromHtml.lng;
+    const extractedPlaceId = fromUrl.placeId;
+
+    // ── Strategy 4: if we have a Place ID directly, use Places Details API ───
+    if (extractedPlaceId && extractedPlaceId.startsWith("ChIJ")) {
+      const detailUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
+      detailUrl.searchParams.set("place_id", extractedPlaceId);
+      detailUrl.searchParams.set("fields", "name,geometry,formatted_address");
+      detailUrl.searchParams.set("key", apiKey);
+      const detailRes = await fetch(detailUrl.toString());
+      const detailData = await detailRes.json() as any;
+      if (detailData.status === "OK" && detailData.result) {
+        const r = detailData.result;
+        return res.json({
+          placeId: extractedPlaceId,
+          name: r.name || extractedName,
+          coordinates: r.geometry?.location || { lat: extractedLat, lng: extractedLng },
+          address: r.formatted_address || "",
+        });
       }
     }
 
-    // If we only have coordinates but no name, fallback to "Unknown Place" so we can still search
-    if (!extractedName && extractedLat && extractedLng) {
-      extractedName = "Unknown Place";
-    }
-
-    if (!extractedName || !extractedLat) {
-      return res.status(400).json({ error: `Could not parse Google Maps URL. Final URL was: ${finalUrl}` });
-    }
-
-    // 3. Search Google Places API by Text to get exact Place ID
-    const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-    searchUrl.searchParams.set("query", extractedName);
-    searchUrl.searchParams.set("location", `${extractedLat},${extractedLng}`);
-    searchUrl.searchParams.set("radius", "1000"); // 1km radius bias
-    searchUrl.searchParams.set("key", apiKey);
-
-    const searchRes = await fetch(searchUrl.toString());
-    const searchData = await searchRes.json() as any;
-
-    if (searchData.status === "OK" && searchData.results && searchData.results.length > 0) {
-      const topResult = searchData.results[0];
-      return res.json({
-        placeId: topResult.place_id,
-        name: topResult.name || extractedName,
-        coordinates: topResult.geometry?.location || { lat: extractedLat, lng: extractedLng },
-        address: topResult.formatted_address || topResult.vicinity || ""
+    if (!extractedName && !extractedLat) {
+      return res.status(400).json({
+        error: `Could not parse this map link. Try using the Search tab instead. (Debug: final URL was ${finalUrl.substring(0, 120)})`,
       });
     }
 
-    // Fallback if search fails
+    // ── Strategy 5: Google Places Text Search to get Place ID + clean name ───
+    if (extractedName && (extractedLat || extractedLng)) {
+      const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+      searchUrl.searchParams.set("query", extractedName);
+      searchUrl.searchParams.set("location", `${extractedLat},${extractedLng}`);
+      searchUrl.searchParams.set("radius", "2000");
+      searchUrl.searchParams.set("key", apiKey);
+
+      const searchRes = await fetch(searchUrl.toString());
+      const searchData = await searchRes.json() as any;
+      if (searchData.status === "OK" && searchData.results?.length > 0) {
+        const top = searchData.results[0];
+        return res.json({
+          placeId: top.place_id || "",
+          name: top.name || extractedName,
+          coordinates: top.geometry?.location || { lat: extractedLat, lng: extractedLng },
+          address: top.formatted_address || top.vicinity || "",
+        });
+      }
+    }
+
+    // ── Final fallback: return whatever we have ───────────────────────────────
     return res.json({
-      placeId: "",
-      name: extractedName,
+      placeId: extractedPlaceId || "",
+      name: extractedName || "Unknown Place",
       coordinates: { lat: extractedLat, lng: extractedLng },
-      address: ""
+      address: "",
     });
+
   } catch (error) {
     console.error("Error resolving link:", error);
     res.status(500).json({ error: "Internal Server Error" });
