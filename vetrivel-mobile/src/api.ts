@@ -395,6 +395,19 @@ export async function getUnscopedPlaces(accessToken: string): Promise<UserPlace[
   return out;
 }
 
+export async function getAllPlaces(accessToken: string): Promise<UserPlace[]> {
+  const { data } = await api.get("/api/places?all=true", {
+    headers: authHeaders(accessToken),
+  });
+  const rows = data as Record<string, unknown>[];
+  const out: UserPlace[] = [];
+  for (const row of rows) {
+    const p = mapPlaceRow(row);
+    if (p) out.push(p);
+  }
+  return out;
+}
+
 export type NearbyTemple = {
   placeId: string;
   name: string;
@@ -429,7 +442,8 @@ export type CreatePlaceInput = {
   category: "nest" | "interest";
   status: string;
   placeId?: string | null;
-  locationId: string;
+  locationId?: string;
+  address?: string;
 };
 
 export async function createPlace(
@@ -1006,9 +1020,23 @@ export async function resolveMapLink(
   accessToken: string,
   url: string
 ): Promise<{ placeId: string; name: string; coordinates: LatLng; address: string }> {
+  // Client-side bypass for Google Maps shortlink bot protection:
+  // We fetch the short link on the mobile device first. React Native's fetch will follow 
+  // the redirect natively (unlike the DigitalOcean server which gets blocked).
+  let finalUrl = url;
+  try {
+    if (url.includes('maps.app.goo.gl') || url.includes('goo.gl')) {
+      const res = await fetch(url, { method: 'HEAD' });
+      if (res.url) finalUrl = res.url;
+    }
+  } catch (e) {
+    // If client side follow fails (CORS, network), fallback to sending the original url
+    console.warn("Client side map link resolve failed, falling back to original URL", e);
+  }
+
   const { data } = await api.post(
     "/api/places/resolve-link",
-    { url },
+    { url: finalUrl },
     { headers: authHeaders(accessToken) }
   );
   return data;
@@ -1018,7 +1046,7 @@ export interface TempleListItem {
   placeId: string;
   name: string;
   coordinates: LatLng;
-  address: string;
+  address?: string;
 }
 
 export interface DivyaDesamList {
