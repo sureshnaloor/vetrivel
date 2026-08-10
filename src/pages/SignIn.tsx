@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import SacredSpacesLogo from '../components/SacredSpacesLogo';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -8,15 +8,19 @@ export default function SignIn() {
   const { isAuthenticated, loading } = useAuth();
   const { theme } = useTheme();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const isDark = theme === 'dark';
 
-  // If already authenticated, redirect to dashboard
+  // The page we should redirect to after sign-in (preserves ?invite=TOKEN etc.)
+  const fromPath = searchParams.get('from') || '/dashboard';
+
+  // If already authenticated, redirect to the intended destination
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      navigate('/dashboard', { replace: true });
+      navigate(fromPath, { replace: true });
     }
-  }, [loading, isAuthenticated, navigate]);
+  }, [loading, isAuthenticated, navigate, fromPath]);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -36,9 +40,9 @@ export default function SignIn() {
       const callbackInput = document.createElement("input");
       callbackInput.type = "hidden";
       callbackInput.name = "callbackUrl";
-      // callbackInput.value = "http://localhost:5173/dashboard";
       const APP_URL = import.meta.env.VITE_APP_URL || 'http://localhost:5173';
-      callbackInput.value = `${APP_URL}/dashboard`;
+      // Pass the full destination URL (including invite token) as OAuth callbackUrl
+      callbackInput.value = `${APP_URL}${fromPath}`;
       form.appendChild(callbackInput);
 
       document.body.appendChild(form);

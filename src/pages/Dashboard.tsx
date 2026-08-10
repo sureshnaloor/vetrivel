@@ -53,13 +53,17 @@ export default function Dashboard() {
   // Auto-accept invite link from URL
   useEffect(() => {
     const inviteToken = searchParams.get('invite');
-    if (!inviteToken || !session?.user) return;
+    // Wait for session to be loaded before trying to accept; token stays in URL until then
+    if (!session?.user) return;
+    if (!inviteToken) return;
 
-    // Remove the param from URL immediately to prevent re-processing
-    searchParams.delete('invite');
-    setSearchParams(searchParams, { replace: true });
+    // Capture token then clean it from URL so this effect doesn't run again
+    const tokenToAccept = inviteToken;
+    const next = new URLSearchParams(searchParams);
+    next.delete('invite');
+    setSearchParams(next, { replace: true });
 
-    acceptInvite(inviteToken)
+    acceptInvite(tokenToAccept)
       .then((msg) => {
         setInviteToast({ type: 'success', message: msg || 'You are now friends!' });
         setTimeout(() => setInviteToast(null), 5000);
@@ -68,7 +72,8 @@ export default function Dashboard() {
         setInviteToast({ type: 'error', message: e.message || 'Failed to accept invite' });
         setTimeout(() => setInviteToast(null), 5000);
       });
-  }, [searchParams, session]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.email]);
 
   return (
     <DashboardPinnedProvider>
