@@ -13,7 +13,6 @@ import RightRail from '../components/dashboard/RightRail';
 import DashboardFooter from '../components/dashboard/DashboardFooter';
 import LocationSelector from '../components/dashboard/LocationSelector';
 import NearbySuggestionWidget from '../components/dashboard/NearbySuggestionWidget';
-import { DashboardPinnedProvider } from '../contexts/DashboardPinnedContext';
 import { SelectedTempleProvider } from '../contexts/SelectedTempleContext';
 import AddTempleDialog from '../components/dashboard/AddTempleDialog';
 
@@ -76,7 +75,6 @@ export default function Dashboard() {
   }, [session?.user?.email]);
 
   return (
-    <DashboardPinnedProvider>
     <SelectedTempleProvider>
     <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-black text-white' : 'bg-[#F4F1EA] text-[#141414]'}`}>
       
@@ -167,6 +165,5 @@ export default function Dashboard() {
       />
     </div>
     </SelectedTempleProvider>
-    </DashboardPinnedProvider>
   );
 }

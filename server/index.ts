@@ -14,6 +14,8 @@ import { mobileAuthRouter } from "./routes/mobileAuth";
 import { friendsRouter } from "./routes/friends";
 import { divyadesamRouter } from "./routes/divyadesam";
 import { aiRouter } from "./routes/ai";
+import { templeBookRouter } from "./routes/templeBook";
+import { usersRouter } from "./routes/users";
 
 dotenv.config();
 
@@ -69,6 +71,8 @@ app.use("/api/friends", friendsRouter);
 
 // Curated Lists (Divya Desams, Char Dham, etc.)
 app.use("/api/divyadesam", divyadesamRouter);
+app.use("/api/temple-book", templeBookRouter);
+app.use("/api/users", usersRouter);
 app.use("/api/ai", aiRouter);
 
 // A test endpoint

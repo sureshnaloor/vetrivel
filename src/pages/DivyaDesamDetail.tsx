@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import Navigation from '../components/Navigation';
 import { useTheme } from '../hooks/useTheme';
 import { fetchListDetails } from '../services/divyadesam';
 import type { DivyaDesamList, TempleListItem } from '../services/divyadesam';
@@ -24,6 +23,7 @@ import {
 } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
+import DashboardShell from '../components/dashboard/DashboardShell';
 
 export default function DivyaDesamDetail() {
   const { id } = useParams<{ id: string }>();
@@ -297,26 +297,27 @@ export default function DivyaDesamDetail() {
 
   if (loading) {
     return (
-      <div className={`min-h-screen transition-colors duration-300 flex flex-col ${isDark ? 'bg-black text-white' : 'bg-[#F4F1EA] text-[#141414]'}`}>
-        <Navigation />
-        <main className="flex-1 flex items-center justify-center">
+      <DashboardShell>
+        <div className="flex items-center justify-center py-24">
           <Loader2 className="w-8 h-8 animate-spin opacity-50" />
-        </main>
-      </div>
+        </div>
+      </DashboardShell>
     );
   }
 
   if (error || !list) {
     return (
-      <div className={`min-h-screen transition-colors duration-300 flex flex-col ${isDark ? 'bg-black text-white' : 'bg-[#F4F1EA] text-[#141414]'}`}>
-        <Navigation />
-        <main className="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      <DashboardShell>
+        <div className="flex flex-col items-center justify-center py-24 text-center">
           <p className="text-red-500 mb-4">{error || 'List not found'}</p>
-          <button onClick={() => navigate('/dashboard/divyadesams')} className="text-[#0D9488] font-medium hover:underline">
+          <button
+            onClick={() => navigate('/dashboard/divyadesams')}
+            className="text-[#0D9488] font-medium hover:underline"
+          >
             Go back to my lists
           </button>
-        </main>
-      </div>
+        </div>
+      </DashboardShell>
     );
   }
 
@@ -327,10 +328,7 @@ export default function DivyaDesamDetail() {
   const isOwner = list.creatorEmail === user?.email;
 
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${isDark ? 'bg-black text-white' : 'bg-[#F4F1EA] text-[#141414]'}`}>
-      <Navigation />
-      
-      <main className="max-w-[1000px] mx-auto pt-24 pb-12 px-4 sm:px-6 lg:px-8">
+    <DashboardShell>
         <button 
           onClick={() => navigate(-1)}
           className={`flex items-center gap-2 mb-6 text-sm font-medium transition-colors ${isDark ? 'text-white/60 hover:text-white' : 'text-[#6E6A63] hover:text-[#141414]'}`}
@@ -667,7 +665,6 @@ export default function DivyaDesamDetail() {
             })}
           </div>
         </div>
-      </main>
 
       <DivyaDesamFormDialog
         open={isEditOpen}
@@ -723,6 +720,6 @@ export default function DivyaDesamDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DashboardShell>
   );
 }

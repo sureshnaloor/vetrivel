@@ -4,12 +4,12 @@ import { useLocation } from '../../contexts/LocationContext';
 import { useDashboardPinned } from '../../contexts/DashboardPinnedContext';
 import { useSelectedTemple } from '../../contexts/SelectedTempleContext';
 import { useFriends } from '../../contexts/FriendsContext';
-import { findSpaceContainingPoint, getSpaceMatchDistanceKm, normalizeDocumentId, normalizeLatLng, getDistanceKm } from '../../lib/geo';
+import { findSpaceContainingPoint, getSpaceMatchDistanceKm, normalizeDocumentId, normalizeLatLng, getDistanceKm, formatDistanceMeters } from '../../lib/geo';
 import { MapPin, Navigation, Loader2, ChevronLeft, ChevronRight, House, Sparkles, Trash2, X, AlertCircle, Map, BookOpen } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { GoogleMap, OverlayView } from '@react-google-maps/api';
-import { fetchPlaces, savePlace, updatePlace, deletePlace, type UserPlace, fetchCustomTemples, createCustomTemple, type CustomTemple } from '../../services/places';
+import { fetchPlaces, savePlace, updatePlace, deletePlace, type UserPlace, fetchCustomTemples, createCustomTemple, type CustomTemple, type NearbyTemple, searchNearbyTemples, searchTemplesWithin1Km, searchTemplesWithin5Km } from '../../services/places';
 import { saveLocation } from '../../services/locations';
 import { useAuth } from '../../hooks/useAuth';
 import VisitLogDialog from './VisitLogDialog';
@@ -99,18 +99,42 @@ const ICON_TYPES = {
   EXPLORER_PIN: { color: '#D13B3B', type: 'circle' },
 } as const;
 
+type NearbySearchMode = 'space' | '1km' | '5km';
+
+function nearbyTempleToPlaceResult(temple: NearbyTemple): google.maps.places.PlaceResult {
+  return {
+    place_id: temple.placeId,
+    name: temple.name,
+    vicinity: temple.vicinity,
+    rating: temple.rating,
+    user_ratings_total: temple.userRatingsTotal,
+    geometry: {
+      location: new google.maps.LatLng(temple.lat, temple.lng),
+    },
+  } as google.maps.places.PlaceResult;
+}
+
 export default function CenterColumn() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const { coordinates, isLoaded, type: locType, address, savedLocations, activeLocationId, refreshLocations, selectLocation, setLocation } = useLocation();
+  const { coordinates, deviceCoordinates, isLoaded, type: locType, address, savedLocations, activeLocationId, refreshLocations, selectLocation, setLocation } = useLocation();
   const { friendNests } = useFriends();
   const { pinToAssign, setPinToAssign, refreshPinnedList } = useDashboardPinned();
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const pinToAssignRef = useRef(pinToAssign);
   pinToAssignRef.current = pinToAssign;
-  const [temples, setTemples] = useState<google.maps.places.PlaceResult[]>([]);
+  const [temples, setTemples] = useState<NearbyTemple[]>([]);
   const [templeSearch, setTempleSearch] = useState('');
   const [isSearchingTemples, setIsSearchingTemples] = useState(false);
+  const [nearbySearchMode, setNearbySearchMode] = useState<NearbySearchMode>('space');
+  const [nearbySearchCenter, setNearbySearchCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [activeRadiusMeters, setActiveRadiusMeters] = useState(50_000);
+  const [nearbyError, setNearbyError] = useState<string | null>(null);
+  const [nearTemplePrompt, setNearTemplePrompt] = useState<{
+    temple: NearbyTemple;
+    distanceMeters: number;
+  } | null>(null);
+  const nearTemplePromptAttemptedRef = useRef<string | null>(null);
   const [userPlaces, setUserPlaces] = useState<UserPlace[]>([]);
   const [hiddenPlaces, setHiddenPlaces] = useState<string[]>([]);
   const [customTemples, setCustomTemples] = useState<CustomTemple[]>([]);
@@ -224,6 +248,9 @@ export default function CenterColumn() {
 
   const dashboardMapCenter = useMemo(() => {
     console.log('[CenterColumn] Evaluating dashboardMapCenter. pinToAssign:', !!pinToAssign, 'activeLocationId:', activeLocationId);
+    if (nearbySearchCenter && (nearbySearchMode === '1km' || nearbySearchMode === '5km')) {
+      return nearbySearchCenter;
+    }
     if (pinToAssign && (!activeLocationId || activeLocationId === normalizeDocumentId(findSpaceContainingPoint(pinToAssign.coordinates, savedLocations, getSpaceMatchDistanceKm())?._id as unknown))) {
       const pin = normalizeLatLng(pinToAssign.coordinates as unknown);
       if (pin) {
@@ -233,7 +260,7 @@ export default function CenterColumn() {
     }
     console.log('[CenterColumn] -> Returning context coordinates:', coordinates);
     return coordinates ?? null;
-  }, [pinToAssign, coordinates, activeLocationId, savedLocations]);
+  }, [pinToAssign, coordinates, activeLocationId, savedLocations, nearbySearchCenter, nearbySearchMode]);
 
   useEffect(() => {
     console.log('[CenterColumn] dashboardMapCenter changed to:', dashboardMapCenter);
@@ -292,6 +319,121 @@ export default function CenterColumn() {
     window.addEventListener('places-updated', refreshUserPlaces);
     return () => window.removeEventListener('places-updated', refreshUserPlaces);
   }, [refreshUserPlaces]);
+
+  const loadNearbyTemples = useCallback(
+    async (opts?: {
+      keyword?: string;
+      mode?: NearbySearchMode;
+      center?: { lat: number; lng: number };
+    }) => {
+      const mode = opts?.mode ?? nearbySearchMode;
+      const keyword = (opts?.keyword ?? templeSearch).trim() || undefined;
+
+      setLoadingTemples(true);
+      setNearbyError(null);
+      try {
+        let center = opts?.center;
+
+        if (mode === '1km' || mode === '5km') {
+          center = deviceCoordinates ?? (locType === 'current' ? coordinates : null) ?? undefined;
+          if (!center) {
+            setNearbyError('Enable location access to search temples near you.');
+            setTemples([]);
+            return;
+          }
+          const response =
+            mode === '1km'
+              ? await searchTemplesWithin1Km(center.lat, center.lng, keyword)
+              : await searchTemplesWithin5Km(center.lat, center.lng, keyword);
+          setNearbySearchMode(mode);
+          setNearbySearchCenter(center);
+          setActiveRadiusMeters(response.radiusMeters);
+          setTemples(response.results.slice(0, 12));
+        } else {
+          const activeSpace = savedLocations.find(
+            (l) => normalizeDocumentId(l._id) === normalizeDocumentId(activeLocationId)
+          );
+          center = activeSpace?.coordinates ?? coordinates ?? undefined;
+          if (!center) {
+            setTemples([]);
+            return;
+          }
+          const response = await searchNearbyTemples({
+            lat: center.lat,
+            lng: center.lng,
+            keyword,
+          });
+          setNearbySearchMode('space');
+          setNearbySearchCenter(null);
+          setActiveRadiusMeters(response.radiusMeters);
+          setTemples(response.results.slice(0, 12));
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Nearby search failed';
+        setNearbyError(msg);
+        setTemples([]);
+      } finally {
+        setLoadingTemples(false);
+        setIsSearchingTemples(false);
+      }
+    },
+    [
+      nearbySearchMode,
+      templeSearch,
+      deviceCoordinates,
+      locType,
+      coordinates,
+      savedLocations,
+      activeLocationId,
+    ]
+  );
+
+  useEffect(() => {
+    if (!session?.user) return;
+    void loadNearbyTemples({ mode: 'space' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per space / coordinates
+  }, [session?.user, activeLocationId, coordinates?.lat, coordinates?.lng]);
+
+  useEffect(() => {
+    if (!session?.user || isFriendNest || !activeLocationId) return;
+    if (nearTemplePromptAttemptedRef.current === activeLocationId) return;
+
+    const gps = deviceCoordinates ?? (locType === 'current' ? coordinates : null);
+    if (!gps) return;
+
+    nearTemplePromptAttemptedRef.current = activeLocationId;
+
+    void (async () => {
+      try {
+        const response = await searchTemplesWithin1Km(gps.lat, gps.lng);
+        const savedIds = new Set(
+          userPlaces.map((p) => p.placeId).filter((id): id is string => Boolean(id))
+        );
+        const candidate = response.results
+          .filter((t) => t.placeId && !savedIds.has(t.placeId))
+          .sort(
+            (a, b) => (a.distanceMeters ?? 0) - (b.distanceMeters ?? 0)
+          )[0];
+
+        if (!candidate || (candidate.distanceMeters ?? 9999) > 500) return;
+
+        setNearTemplePrompt({
+          temple: candidate,
+          distanceMeters: candidate.distanceMeters ?? 0,
+        });
+      } catch {
+        /* best-effort prompt only */
+      }
+    })();
+  }, [
+    session?.user,
+    isFriendNest,
+    activeLocationId,
+    deviceCoordinates,
+    coordinates,
+    locType,
+    userPlaces,
+  ]);
 
   const handleMapRightClick = (e: google.maps.MapMouseEvent) => {
     if (e.latLng && e.domEvent) {
@@ -471,12 +613,36 @@ export default function CenterColumn() {
     }
   };
 
-  const handleSaveSuggestedPlace = async (temple: google.maps.places.PlaceResult, category: 'nest' | 'interest') => {
-    const lat = temple.geometry?.location?.lat();
-    const lng = temple.geometry?.location?.lng();
-    if (!lat || !lng) return;
+  const persistNearbyTemple = async (
+    temple: NearbyTemple,
+    category: 'nest' | 'interest',
+    locationIdOverride?: string
+  ) => {
+    try {
+      const saved = await savePlace({
+        name: temple.name,
+        coordinates: { lat: temple.lat, lng: temple.lng },
+        category,
+        status: 'planned',
+        placeId: temple.placeId,
+        locationId: locationIdOverride || activeLocationId || undefined,
+      });
+      setUserPlaces((prev) => {
+        const filtered = prev.filter((p) => p._id !== saved._id);
+        return [...filtered, saved];
+      });
+    } catch (e) {
+      console.error('Failed to save nearby temple', e);
+    }
+  };
 
-    // Proximity check
+  const handleSaveNearbyTemple = async (
+    temple: NearbyTemple,
+    category: 'nest' | 'interest'
+  ) => {
+    const lat = temple.lat;
+    const lng = temple.lng;
+
     let nearestDist = Infinity;
     let nearestSpace = null;
     for (const space of savedLocations) {
@@ -491,19 +657,23 @@ export default function CenterColumn() {
       setProximityAlert({
         type: 'suggested',
         category,
-        temple,
+        temple: nearbyTempleToPlaceResult(temple),
         nearestSpace: nearestSpace || undefined,
         distance: nearestDist,
-        coords: { lat, lng }
+        coords: { lat, lng },
       });
       return;
     }
 
     if (!activeLocationId) {
-      openCreateSpaceFlow({ type: 'suggested', temple, category });
+      openCreateSpaceFlow({
+        type: 'suggested',
+        temple: nearbyTempleToPlaceResult(temple),
+        category,
+      });
       return;
     }
-    await persistSuggestedPlace(temple, category);
+    await persistNearbyTemple(temple, category);
   };
 
   const persistPinnedPlaceAssignment = async (
@@ -662,60 +832,22 @@ export default function CenterColumn() {
     setContextMenu(null);
   };
 
-  useEffect(() => {
-    if (!isLoaded || !coordinates) return;
-    
-    setLoadingTemples(true);
-    // Needed for PlacesService
-    const mapDiv = document.createElement('div');
-    const service = new window.google.maps.places.PlacesService(mapDiv);
-    
-    const request = {
-      location: new window.google.maps.LatLng(coordinates.lat, coordinates.lng),
-      radius: 50000, // Search up to 50km (API max limit)
-      type: 'hindu_temple'
-    };
-
-    service.nearbySearch(request, (results, status) => {
-      if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-        // Filter out non-temples or generic locations heavily if needed, but 'hindu_temple' type usually works well
-        setTemples(results.slice(0, 6)); // Show top 6
-      } else {
-        setTemples([]);
-      }
-      setLoadingTemples(false);
-    });
-  }, [isLoaded, coordinates]);
-
   const runTempleNameSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!isLoaded || !coordinates) return;
-    const term = templeSearch.trim();
-    if (!term) return;
-
+    if (!templeSearch.trim()) return;
     setIsSearchingTemples(true);
-    const mapDiv = document.createElement('div');
-    const service = new window.google.maps.places.PlacesService(mapDiv);
-
-    const request: google.maps.places.PlaceSearchRequest = {
-      location: new window.google.maps.LatLng(coordinates.lat, coordinates.lng),
-      radius: 50000,
-      type: 'hindu_temple',
-      keyword: term,
-    };
-
-    service.nearbySearch(request, (results, status) => {
-      if (status === window.google.maps.places.PlacesServiceStatus.OK && results) {
-        const filtered = results
-          .filter((r) => (r.name || '').toLowerCase().includes(term.toLowerCase()))
-          .slice(0, 12);
-        setTemples(filtered);
-      } else {
-        setTemples([]);
-      }
-      setIsSearchingTemples(false);
-    });
+    await loadNearbyTemples({ keyword: templeSearch });
   };
+
+  const nearbySectionSubtitle = useMemo(() => {
+    if (nearbySearchMode === '1km') {
+      return 'Hindu temples within 1 km of your current location.';
+    }
+    if (nearbySearchMode === '5km') {
+      return 'Hindu temples within 5 km of your current location.';
+    }
+    return 'Hindu temples within ~50 km of this space center.';
+  }, [nearbySearchMode]);
 
   return (
     <div className={`flex flex-col gap-6 pb-24 ${isDark ? 'text-white' : 'text-[#141414]'}`}>
@@ -741,6 +873,62 @@ export default function CenterColumn() {
             AI Suggested
           </div>
         </div>
+
+        <p className={`text-sm mb-3 ${isDark ? 'text-white/55' : 'text-[#6E6A63]'}`}>
+          {nearbySectionSubtitle}
+        </p>
+
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => void loadNearbyTemples({ mode: '1km' })}
+            className={`text-xs font-semibold px-3 py-2 rounded-full border transition-colors ${
+              nearbySearchMode === '1km'
+                ? 'bg-[#0D9488] border-[#0D9488] text-white'
+                : isDark
+                  ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/10'
+                  : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/5'
+            }`}
+          >
+            Near me · 1 km
+          </button>
+          <button
+            type="button"
+            onClick={() => void loadNearbyTemples({ mode: '5km' })}
+            className={`text-xs font-semibold px-3 py-2 rounded-full border transition-colors ${
+              nearbySearchMode === '5km'
+                ? 'bg-[#0D9488] border-[#0D9488] text-white'
+                : isDark
+                  ? 'border-[#0D9488]/40 text-[#2DD4BF] hover:bg-[#0D9488]/10'
+                  : 'border-[#0D9488]/30 text-[#0D9488] hover:bg-[#0D9488]/5'
+            }`}
+          >
+            Near me · 5 km
+          </button>
+          <button
+            type="button"
+            onClick={() => void loadNearbyTemples({ mode: 'space' })}
+            className={`text-xs font-semibold px-3 py-2 rounded-full border transition-colors ${
+              nearbySearchMode === 'space'
+                ? 'bg-[#0D9488] border-[#0D9488] text-white'
+                : isDark
+                  ? 'border-white/15 text-white/70 hover:bg-white/5'
+                  : 'border-black/10 text-[#6E6A63] hover:bg-black/5'
+            }`}
+          >
+            This space
+          </button>
+        </div>
+
+        {nearbySearchMode !== 'space' ? (
+          <p className={`text-[11px] mb-3 ${isDark ? 'text-white/45' : 'text-[#6E6A63]'}`}>
+            Showing temples within {formatDistanceMeters(activeRadiusMeters)} of where you are now.
+          </p>
+        ) : null}
+
+        {nearbyError ? (
+          <p className="text-sm text-red-500 mb-3">{nearbyError}</p>
+        ) : null}
 
         {loadingTemples ? (
           <div className="flex justify-center items-center h-32">
@@ -768,36 +956,41 @@ export default function CenterColumn() {
               {temples.length > 0 ? (
                 temples.map((temple, idx) => (
                   <div 
-                    key={idx} 
-                    className={`min-w-[240px] max-w-[240px] p-4 rounded-xl border flex-shrink-0 cursor-pointer transition-transform hover:-translate-y-1 snap-start ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'} ${selectedTwinkleId === temple.place_id ? 'ring-2 ring-[#D13B3B]' : ''}`}
+                    key={temple.placeId || idx} 
+                    className={`min-w-[240px] max-w-[240px] p-4 rounded-xl border flex-shrink-0 cursor-pointer transition-transform hover:-translate-y-1 snap-start ${isDark ? 'bg-[#131418] border-white/10' : 'bg-white border-[#e5e5e5]'} ${selectedTwinkleId === temple.placeId ? 'ring-2 ring-[#D13B3B]' : ''}`}
                     onClick={() => {
-                      const isDeselect = selectedTwinkleId === temple.place_id;
-                      setSelectedTwinkleId(isDeselect ? null : (temple.place_id || null));
+                      const isDeselect = selectedTwinkleId === temple.placeId;
+                      setSelectedTwinkleId(isDeselect ? null : (temple.placeId || null));
                       if (isDeselect) { setSelectedTemple(null); } else {
-                        const lat = temple.geometry?.location?.lat(); const lng = temple.geometry?.location?.lng();
-                        if (lat && lng) setSelectedTemple({ name: temple.name || 'Temple', placeId: temple.place_id, coordinates: { lat, lng }, vicinity: temple.vicinity, rating: temple.rating, userRatingsTotal: temple.user_ratings_total });
+                        setSelectedTemple({
+                          name: temple.name || 'Temple',
+                          placeId: temple.placeId,
+                          coordinates: { lat: temple.lat, lng: temple.lng },
+                          vicinity: temple.vicinity,
+                          rating: temple.rating,
+                          userRatingsTotal: temple.userRatingsTotal,
+                        });
                       }
                     }}
                   >
                     <h3 className="font-semibold mb-1 truncate" title={temple.name}>{temple.name}</h3>
                     <p className={`text-xs flex items-start gap-1 mb-3 ${isDark ? 'text-white/60' : 'text-[#6E6A63]'} line-clamp-2 min-h-[32px]`}>
-                      <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" /> {temple.vicinity}
+                      <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                      {temple.distanceMeters != null
+                        ? `${formatDistanceMeters(temple.distanceMeters)} away`
+                        : temple.vicinity || 'Hindu temple'}
                     </p>
                     <div className={`p-2 rounded-lg text-xs flex items-center justify-between gap-2 mb-1 ${isDark ? 'bg-white/5' : 'bg-[#F4F1EA]'}`}>
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="mt-0.5 flex-shrink-0">⭐</span>
                         <span>{temple.rating ? `${temple.rating} Rating` : 'New'}</span>
-                        {temple.user_ratings_total && <span className="opacity-50">({temple.user_ratings_total})</span>}
+                        {temple.userRatingsTotal && <span className="opacity-50">({temple.userRatingsTotal})</span>}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={(e) => { 
                             e.stopPropagation(); 
-                            const lat = temple.geometry?.location?.lat();
-                            const lng = temple.geometry?.location?.lng();
-                            if (lat && lng) {
-                              window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank', 'noopener');
-                            }
+                            window.open(`https://www.google.com/maps/dir/?api=1&destination=${temple.lat},${temple.lng}`, '_blank', 'noopener');
                           }}
                           aria-label="Get Directions"
                           title="Get Directions"
@@ -808,7 +1001,7 @@ export default function CenterColumn() {
                         {!isFriendNest && (
                           <>
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleSaveSuggestedPlace(temple, 'nest'); }}
+                              onClick={(e) => { e.stopPropagation(); void handleSaveNearbyTemple(temple, 'nest'); }}
                               aria-label="Add to Nest"
                               title="Add to Nest"
                               className={`w-6 h-6 rounded-md border transition-colors flex items-center justify-center ${isDark ? 'bg-[#0D9488]/10 border-[#0D9488]/30 text-[#2DD4BF] hover:bg-[#0D9488]/20' : 'bg-[#0D9488]/5 border-[#0D9488]/20 text-[#0D9488] hover:bg-[#0D9488]/10'}`}
@@ -816,7 +1009,7 @@ export default function CenterColumn() {
                               <House className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={(e) => { e.stopPropagation(); handleSaveSuggestedPlace(temple, 'interest'); }}
+                              onClick={(e) => { e.stopPropagation(); void handleSaveNearbyTemple(temple, 'interest'); }}
                               aria-label="Add as Interest"
                               title="Add as Interest"
                               className={`w-6 h-6 rounded-md border transition-colors flex items-center justify-center ${isDark ? 'bg-blue-400/10 border-blue-400/30 text-blue-300 hover:bg-blue-400/20' : 'bg-blue-50 border-blue-200 text-blue-600 hover:bg-blue-100'}`}
@@ -834,7 +1027,11 @@ export default function CenterColumn() {
                   <MapPin className="w-8 h-8 opacity-50 mb-2" />
                   <p className="font-medium text-base">No temples found nearby</p>
                   <p className="text-xs max-w-sm">
-                    We couldn't find any Hindu Temples within a 50km radius of your {locType === 'current' ? 'current' : 'planned'} location.
+                    {nearbySearchMode === '1km'
+                      ? 'No Hindu temples within 1 km. Try 5 km or this space.'
+                      : nearbySearchMode === '5km'
+                        ? 'No Hindu temples within 5 km. Try this space or widen your search.'
+                        : `We couldn't find any Hindu temples within ~50 km of your ${locType === 'current' ? 'current' : 'planned'} location.`}
                   </p>
                 </div>
               )}
@@ -977,20 +1174,19 @@ export default function CenterColumn() {
               {/* Render dynamic temples as pins */}
               {temples
                 .filter(temple => {
-                  // Hide background generic temples if they are already saved as a userPlace, or if they were explicitly removed
-                  if (hiddenPlaces.includes(temple.place_id || temple.name || '')) return false;
-                  if (userPlaces.some(up => up.placeId === temple.place_id || up.name === temple.name)) return false;
+                  if (hiddenPlaces.includes(temple.placeId || temple.name || '')) return false;
+                  if (userPlaces.some(up => up.placeId === temple.placeId || up.name === temple.name)) return false;
                   return true;
                 })
                 .map((temple, idx) => {
-                const lat = temple.geometry?.location?.lat();
-                const lng = temple.geometry?.location?.lng();
+                const lat = temple.lat;
+                const lng = temple.lng;
                 if (!lat || !lng) return null;
-                const isSelected = selectedTwinkleId === temple.place_id;
+                const isSelected = selectedTwinkleId === temple.placeId;
                 
                 return (
                   <OverlayView
-                    key={`temple-pin-${idx}`}
+                    key={`temple-pin-${temple.placeId || idx}`}
                     position={{ lat, lng }}
                     mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
                   >
@@ -999,10 +1195,17 @@ export default function CenterColumn() {
                       title={temple.name}
                       onClick={(e) => {
                         e.stopPropagation();
-                        const isDeselect = selectedTwinkleId === temple.place_id;
-                        setSelectedTwinkleId(isDeselect ? null : (temple.place_id || null));
+                        const isDeselect = selectedTwinkleId === temple.placeId;
+                        setSelectedTwinkleId(isDeselect ? null : (temple.placeId || null));
                         if (isDeselect) { setSelectedTemple(null); } else {
-                          setSelectedTemple({ name: temple.name || 'Temple', placeId: temple.place_id, coordinates: { lat, lng }, vicinity: temple.vicinity, rating: temple.rating, userRatingsTotal: temple.user_ratings_total });
+                          setSelectedTemple({
+                            name: temple.name || 'Temple',
+                            placeId: temple.placeId,
+                            coordinates: { lat, lng },
+                            vicinity: temple.vicinity,
+                            rating: temple.rating,
+                            userRatingsTotal: temple.userRatingsTotal,
+                          });
                         }
                       }}
                     >
@@ -1529,6 +1732,46 @@ export default function CenterColumn() {
           Follow temples and devotees to see highlights here
         </p>
       </div>
+
+      {/* Near-temple prompt (once per active space) */}
+      <Dialog open={!!nearTemplePrompt} onOpenChange={(open) => !open && setNearTemplePrompt(null)}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Temple nearby</DialogTitle>
+            <DialogDescription className="text-base">
+              You seem to be near <strong>{nearTemplePrompt?.temple.name}</strong> (
+              {formatDistanceMeters(nearTemplePrompt?.distanceMeters ?? 0)} away). Add it to this
+              space?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex flex-col gap-2 sm:flex-col items-stretch">
+            <Button
+              className="w-full bg-[#0D9488] hover:bg-[#0D9488]/90 text-white"
+              onClick={() => {
+                if (!nearTemplePrompt) return;
+                void handleSaveNearbyTemple(nearTemplePrompt.temple, 'nest');
+                setNearTemplePrompt(null);
+              }}
+            >
+              Add as nest
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                if (!nearTemplePrompt) return;
+                void handleSaveNearbyTemple(nearTemplePrompt.temple, 'interest');
+                setNearTemplePrompt(null);
+              }}
+            >
+              Add as interest
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={() => setNearTemplePrompt(null)}>
+              Ignore
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 50KM Proximity Alert Dialog */}
       <Dialog open={!!proximityAlert} onOpenChange={(open) => !open && setProximityAlert(null)}>

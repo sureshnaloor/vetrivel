@@ -416,13 +416,20 @@ export type NearbyTemple = {
   vicinity?: string;
   rating?: number;
   userRatingsTotal?: number;
+  distanceMeters?: number;
+};
+
+export type NearbyTemplesResponse = {
+  results: NearbyTemple[];
+  radiusMeters: number;
+  center: { lat: number; lng: number };
 };
 
 /** Google Places nearby hindu_temple (server proxy). Matches web dashboard search. */
 export async function searchNearbyTemples(
   accessToken: string,
   params: { lat: number; lng: number; radiusMeters?: number; keyword?: string }
-): Promise<NearbyTemple[]> {
+): Promise<NearbyTemplesResponse> {
   const { data } = await api.get("/api/places/nearby", {
     headers: authHeaders(accessToken),
     params: {
@@ -432,8 +439,61 @@ export async function searchNearbyTemples(
       ...(params.keyword ? { keyword: params.keyword } : {}),
     },
   });
-  const results = (data as { results?: NearbyTemple[] }).results;
-  return Array.isArray(results) ? results : [];
+  const payload = data as Partial<NearbyTemplesResponse>;
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  return {
+    results,
+    radiusMeters: payload.radiusMeters ?? params.radiusMeters ?? 50_000,
+    center: payload.center ?? { lat: params.lat, lng: params.lng },
+  };
+}
+
+/** Temples within 1 km of the user's current coordinates. */
+export async function searchTemplesWithin1Km(
+  accessToken: string,
+  lat: number,
+  lng: number,
+  keyword?: string
+): Promise<NearbyTemplesResponse> {
+  const { data } = await api.get("/api/places/nearby/1km", {
+    headers: authHeaders(accessToken),
+    params: {
+      lat,
+      lng,
+      ...(keyword ? { keyword } : {}),
+    },
+  });
+  const payload = data as Partial<NearbyTemplesResponse>;
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  return {
+    results,
+    radiusMeters: payload.radiusMeters ?? 1_000,
+    center: payload.center ?? { lat, lng },
+  };
+}
+
+/** Temples within 5 km of the user's current coordinates. */
+export async function searchTemplesWithin5Km(
+  accessToken: string,
+  lat: number,
+  lng: number,
+  keyword?: string
+): Promise<NearbyTemplesResponse> {
+  const { data } = await api.get("/api/places/nearby/5km", {
+    headers: authHeaders(accessToken),
+    params: {
+      lat,
+      lng,
+      ...(keyword ? { keyword } : {}),
+    },
+  });
+  const payload = data as Partial<NearbyTemplesResponse>;
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  return {
+    results,
+    radiusMeters: payload.radiusMeters ?? 5_000,
+    center: payload.center ?? { lat, lng },
+  };
 }
 
 export type CreatePlaceInput = {
@@ -1020,26 +1080,40 @@ export async function resolveMapLink(
   accessToken: string,
   url: string
 ): Promise<{ placeId: string; name: string; coordinates: LatLng; address: string }> {
-  // Client-side bypass for Google Maps shortlink bot protection:
-  // We fetch the short link on the mobile device first. React Native's fetch will follow 
-  // the redirect natively (unlike the DigitalOcean server which gets blocked).
-  let finalUrl = url;
-  try {
-    if (url.includes('maps.app.goo.gl') || url.includes('goo.gl')) {
-      const res = await fetch(url, { method: 'HEAD' });
-      if (res.url) finalUrl = res.url;
-    }
-  } catch (e) {
-    // If client side follow fails (CORS, network), fallback to sending the original url
-    console.warn("Client side map link resolve failed, falling back to original URL", e);
-  }
-
+  // Send the raw URL to the server. The improved server-side multi-strategy
+  // parser now handles iOS Apple Maps links, expanded Google Maps URLs,
+  // and tries multiple User-Agent approaches to unshorten goo.gl links.
   const { data } = await api.post(
     "/api/places/resolve-link",
-    { url: finalUrl },
+    { url: url.trim() },
     { headers: authHeaders(accessToken) }
   );
   return data;
+}
+
+export interface PlaceSearchResult {
+  placeId: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+}
+
+export async function searchPlaces(
+  accessToken: string,
+  query: string,
+  location?: { lat: number; lng: number }
+): Promise<PlaceSearchResult[]> {
+  const params: Record<string, string> = { q: query };
+  if (location) {
+    params.lat = String(location.lat);
+    params.lng = String(location.lng);
+  }
+  const { data } = await api.get("/api/places/search", {
+    headers: authHeaders(accessToken),
+    params,
+  });
+  return data.results ?? [];
 }
 
 export interface TempleListItem {

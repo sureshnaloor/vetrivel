@@ -81,6 +81,88 @@ export const deletePlace = async (id: string): Promise<boolean> => {
   return res.ok;
 };
 
+export type NearbyTemple = {
+  placeId: string;
+  name: string;
+  lat: number;
+  lng: number;
+  vicinity?: string;
+  rating?: number;
+  userRatingsTotal?: number;
+  distanceMeters?: number;
+};
+
+export type NearbyTemplesResponse = {
+  results: NearbyTemple[];
+  radiusMeters: number;
+  center: { lat: number; lng: number };
+};
+
+async function parseNearbyResponse(
+  res: Response,
+  fallbackCenter: { lat: number; lng: number },
+  fallbackRadiusMeters: number
+): Promise<NearbyTemplesResponse> {
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(data?.error || 'Nearby search failed');
+  }
+  const payload = (await res.json()) as Partial<NearbyTemplesResponse>;
+  return {
+    results: Array.isArray(payload.results) ? payload.results : [],
+    radiusMeters: payload.radiusMeters ?? fallbackRadiusMeters,
+    center: payload.center ?? fallbackCenter,
+  };
+}
+
+/** Hindu temples near a point (default ~50 km radius). */
+export async function searchNearbyTemples(params: {
+  lat: number;
+  lng: number;
+  radiusMeters?: number;
+  keyword?: string;
+}): Promise<NearbyTemplesResponse> {
+  const radius = params.radiusMeters ?? 50_000;
+  const qs = new URLSearchParams({
+    lat: String(params.lat),
+    lng: String(params.lng),
+    radius: String(radius),
+  });
+  if (params.keyword) qs.set('keyword', params.keyword);
+  const res = await fetch(`${API_BASE}/nearby?${qs.toString()}`, {
+    credentials: 'include',
+  });
+  return parseNearbyResponse(res, { lat: params.lat, lng: params.lng }, radius);
+}
+
+/** Temples within 1 km of the user's coordinates. */
+export async function searchTemplesWithin1Km(
+  lat: number,
+  lng: number,
+  keyword?: string
+): Promise<NearbyTemplesResponse> {
+  const qs = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (keyword) qs.set('keyword', keyword);
+  const res = await fetch(`${API_BASE}/nearby/1km?${qs.toString()}`, {
+    credentials: 'include',
+  });
+  return parseNearbyResponse(res, { lat, lng }, 1_000);
+}
+
+/** Temples within 5 km of the user's coordinates. */
+export async function searchTemplesWithin5Km(
+  lat: number,
+  lng: number,
+  keyword?: string
+): Promise<NearbyTemplesResponse> {
+  const qs = new URLSearchParams({ lat: String(lat), lng: String(lng) });
+  if (keyword) qs.set('keyword', keyword);
+  const res = await fetch(`${API_BASE}/nearby/5km?${qs.toString()}`, {
+    credentials: 'include',
+  });
+  return parseNearbyResponse(res, { lat, lng }, 5_000);
+}
+
 // ----------------------------------------
 // Custom Community Temples
 // ----------------------------------------

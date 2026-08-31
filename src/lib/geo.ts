@@ -17,6 +17,11 @@ export function normalizeLatLng(input: unknown): LatLng | null {
   return { lat, lng };
 }
 
+/** Case-insensitive email match for client-side user scoping */
+export function normalizeEmail(email: string | null | undefined): string {
+  return email?.toLowerCase().trim() ?? '';
+}
+
 /** Stable string id from Mongo `_id` (string, ObjectId, or { $oid }) */
 export function normalizeDocumentId(raw: unknown): string | null {
   if (raw == null || raw === '') return null;
@@ -72,4 +77,15 @@ export function findSpaceContainingPoint(
     }
   }
   return best;
+}
+
+export function getDistanceMeters(a: LatLng, b: LatLng): number {
+  return Math.round(getDistanceKm(a, b) * 1000);
+}
+
+export function formatDistanceMeters(distanceMeters: number): string {
+  if (distanceMeters < 1000) {
+    return `${distanceMeters} m`;
+  }
+  return `${(distanceMeters / 1000).toFixed(1)} km`;
 }

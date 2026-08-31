@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Sparkles } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -211,10 +212,10 @@ const BookPoojaSection = ({ className = '' }: BookPoojaSectionProps) => {
           Book a pooja, leave a note, and receive a confirmation—directly
           through the host&apos;s nest.
         </p>
-        <button className="btn-primary">
+        <Link to="/poojas" className="btn-primary inline-flex items-center">
           <Sparkles className="w-4 h-4 mr-2" />
           Book an offering
-        </button>
+        </Link>
       </div>
     </section>
   );

@@ -20,6 +20,8 @@ import {
   getLeaderboard,
   getPlacesForLocation,
   searchNearbyTemples,
+  searchTemplesWithin1Km,
+  searchTemplesWithin5Km,
 } from "../api";
 import {
   TempleDetailModal,
@@ -30,6 +32,8 @@ import { SpaceMap } from "../components/SpaceMap";
 import type { RootStackParamList } from "../navigation/types";
 
 type NavProps = NativeStackScreenProps<RootStackParamList, "NestDetail">;
+
+type NearbySearchMode = "space" | "1km" | "5km";
 
 type Props = NavProps & {
   accessToken: string;
@@ -78,6 +82,24 @@ function getDistanceMeters(
     Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
   return 2 * earthRadiusM * Math.asin(Math.sqrt(h));
+}
+
+function formatDistanceMeters(distanceMeters: number): string {
+  if (distanceMeters < 1000) {
+    return `${distanceMeters} m`;
+  }
+  return `${(distanceMeters / 1000).toFixed(1)} km`;
+}
+
+function filterNearbyResults(list: NearbyTemple[]): NearbyTemple[] {
+  return list.filter(
+    (t) =>
+      t.placeId &&
+      Number.isFinite(t.lat) &&
+      Number.isFinite(t.lng) &&
+      t.lat !== 0 &&
+      t.lng !== 0
+  );
 }
 
 function PlaceCard({
@@ -181,6 +203,12 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nearbyError, setNearbyError] = useState<string | null>(null);
+  const [nearbySearchMode, setNearbySearchMode] = useState<NearbySearchMode>("space");
+  const [nearbySearchCenter, setNearbySearchCenter] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [activeRadiusMeters, setActiveRadiusMeters] = useState(50_000);
   const [searchInput, setSearchInput] = useState("");
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
@@ -226,25 +254,66 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   );
 
   const loadNearby = useCallback(
-    async (keyword?: string) => {
+    async (opts?: {
+      keyword?: string;
+      mode?: NearbySearchMode;
+      center?: { lat: number; lng: number };
+    }) => {
+      const mode = opts?.mode ?? nearbySearchMode;
+      const keyword = (opts?.keyword ?? searchInput).trim() || undefined;
+
       setNearbyLoading(true);
       setNearbyError(null);
       try {
-        const list = await searchNearbyTemples(accessToken, {
-          lat: nestCenter.lat,
-          lng: nestCenter.lng,
-          keyword: keyword?.trim() || undefined,
-        });
-        setNearby(
-          list.filter(
-            (t) =>
-              t.placeId &&
-              Number.isFinite(t.lat) &&
-              Number.isFinite(t.lng) &&
-              t.lat !== 0 &&
-              t.lng !== 0
-          )
-        );
+        let center = opts?.center;
+
+        if (mode === "1km" || mode === "5km") {
+          if (!center) {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== "granted") {
+              setNearbyError(
+                "Location permission is required to search temples near you."
+              );
+              setNearby([]);
+              return;
+            }
+            const pos = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+            center = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            };
+          }
+        } else {
+          center = nestCenter;
+        }
+
+        const response =
+          mode === "1km"
+            ? await searchTemplesWithin1Km(
+                accessToken,
+                center.lat,
+                center.lng,
+                keyword
+              )
+            : mode === "5km"
+              ? await searchTemplesWithin5Km(
+                  accessToken,
+                  center.lat,
+                  center.lng,
+                  keyword
+                )
+              : await searchNearbyTemples(accessToken, {
+                  lat: center.lat,
+                  lng: center.lng,
+                  keyword,
+                });
+
+        setNearbySearchMode(mode);
+        setNearbySearchCenter(mode === "space" ? null : center);
+        setActiveRadiusMeters(response.radiusMeters);
+        setNearby(filterNearbyResults(response.results));
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : "Nearby search failed";
         setNearbyError(msg);
@@ -253,7 +322,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
         setNearbyLoading(false);
       }
     },
-    [accessToken, nestCenter.lat, nestCenter.lng]
+    [accessToken, nearbySearchMode, nestCenter, searchInput]
   );
 
   useEffect(() => {
@@ -281,81 +350,10 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   }, [loadBoard]);
 
   useEffect(() => {
-    loadNearby();
-  }, [loadNearby]);
-
-  useEffect(() => {
-    if (loading || isFriendNest || nearTemplePromptAttemptedRef.current) return;
-    nearTemplePromptAttemptedRef.current = true;
-
-    let cancelled = false;
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (cancelled || status !== "granted") return;
-
-      try {
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        if (cancelled) return;
-
-        const current = {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        };
-        const results = await searchNearbyTemples(accessToken, {
-          lat: current.lat,
-          lng: current.lng,
-          radiusMeters: 500,
-        });
-        if (cancelled) return;
-
-        const candidate = results
-          .filter(
-            (t) =>
-              t.placeId &&
-              !savedPlaceIds.has(t.placeId) &&
-              Number.isFinite(t.lat) &&
-              Number.isFinite(t.lng)
-          )
-          .map((t) => ({
-            temple: t,
-            distanceMeters: getDistanceMeters(current, { lat: t.lat, lng: t.lng }),
-          }))
-          .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
-
-        if (!candidate || candidate.distanceMeters > 500) return;
-
-        Alert.alert(
-          "Temple nearby",
-          `You seem to be near "${candidate.temple.name}" (${Math.round(
-            candidate.distanceMeters
-          )} m away). Add it to this space?`,
-          [
-            { text: "Ignore", style: "cancel" },
-            {
-              text: "Add as interest",
-              onPress: () => {
-                void addNearby(candidate.temple, "interest");
-              },
-            },
-            {
-              text: "Add as nest",
-              onPress: () => {
-                void addNearby(candidate.temple, "nest");
-              },
-            },
-          ]
-        );
-      } catch {
-        /* best-effort prompt only */
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, addNearby, isFriendNest, loading, savedPlaceIds]);
+    void loadNearby({ mode: "space" });
+    // Initial space-wide search only when this screen/space loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken, locationId]);
 
   const { nestTemples, interestTemples } = useMemo(() => {
     const nestTemples = places.filter((p) => p.category === "nest");
@@ -423,6 +421,75 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
     [accessToken, isFriendNest, locationId, loadPlaces]
   );
 
+  useEffect(() => {
+    if (loading || isFriendNest || nearTemplePromptAttemptedRef.current) return;
+    nearTemplePromptAttemptedRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (cancelled || status !== "granted") return;
+
+      try {
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (cancelled) return;
+
+        const current = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        };
+        const response = await searchTemplesWithin1Km(
+          accessToken,
+          current.lat,
+          current.lng
+        );
+        if (cancelled) return;
+
+        const candidate = response.results
+          .filter((t) => t.placeId && !savedPlaceIds.has(t.placeId))
+          .map((t) => ({
+            temple: t,
+            distanceMeters:
+              t.distanceMeters ??
+              getDistanceMeters(current, { lat: t.lat, lng: t.lng }),
+          }))
+          .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+
+        if (!candidate || candidate.distanceMeters > 500) return;
+
+        Alert.alert(
+          "Temple nearby",
+          `You seem to be near "${candidate.temple.name}" (${Math.round(
+            candidate.distanceMeters
+          )} m away). Add it to this space?`,
+          [
+            { text: "Ignore", style: "cancel" },
+            {
+              text: "Add as interest",
+              onPress: () => {
+                void addNearby(candidate.temple, "interest");
+              },
+            },
+            {
+              text: "Add as nest",
+              onPress: () => {
+                void addNearby(candidate.temple, "nest");
+              },
+            },
+          ]
+        );
+      } catch {
+        /* best-effort prompt only */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, addNearby, isFriendNest, loading, savedPlaceIds]);
+
   const submitManual = useCallback(async () => {
     const name = manualName.trim();
     if (isFriendNest) return;
@@ -451,8 +518,37 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
   }, [manualName, manualCategory, accessToken, isFriendNest, locationId, nestCenter, loadPlaces]);
 
   const runSearch = useCallback(() => {
-    loadNearby(searchInput);
+    void loadNearby({ keyword: searchInput });
   }, [loadNearby, searchInput]);
+
+  const searchNearMe1Km = useCallback(() => {
+    void loadNearby({ mode: "1km" });
+  }, [loadNearby]);
+
+  const searchNearMe5Km = useCallback(() => {
+    void loadNearby({ mode: "5km" });
+  }, [loadNearby]);
+
+  const searchThisSpace = useCallback(() => {
+    void loadNearby({ mode: "space", keyword: searchInput });
+  }, [loadNearby, searchInput]);
+
+  const mapCenter = useMemo(
+    () => nearbySearchCenter ?? nestCenter,
+    [nearbySearchCenter, nestCenter]
+  );
+
+  const showUserOnMap = nearbySearchMode === "1km" || nearbySearchMode === "5km";
+
+  const nearbySectionSubtitle = useMemo(() => {
+    if (nearbySearchMode === "1km") {
+      return "Hindu temples within 1 km of your current location.";
+    }
+    if (nearbySearchMode === "5km") {
+      return "Hindu temples within 5 km of your current location.";
+    }
+    return "Hindu temples within ~50 km of this space center.";
+  }, [nearbySearchMode]);
 
   const openSavedPlaceDetail = useCallback((p: UserPlace) => {
     setDetailTemple(
@@ -526,7 +622,7 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
             refreshing={refreshing}
             onRefresh={async () => {
               await loadPlaces({ refresh: true });
-              await loadNearby(searchInput);
+              await loadNearby({ keyword: searchInput });
             }}
           />
         }
@@ -545,9 +641,9 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
 
         <SpaceMap
           height={240}
-          center={nestCenter}
+          center={mapCenter}
           markers={mapMarkers}
-          showsUserLocation={false}
+          showsUserLocation={showUserOnMap}
           onMarkerPress={onMapMarkerPress}
         />
 
@@ -631,9 +727,65 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Nearby (Google)</Text>
-          <Text style={styles.sectionSubtitle}>
-            Hindu temples within ~50 km of this space, like the web dashboard.
-          </Text>
+          <Text style={styles.sectionSubtitle}>{nearbySectionSubtitle}</Text>
+
+          <View style={styles.radiusRow}>
+            <Pressable
+              style={[
+                styles.radiusBtn,
+                nearbySearchMode === "1km" && styles.radiusBtnActive,
+              ]}
+              onPress={searchNearMe1Km}
+            >
+              <Text
+                style={[
+                  styles.radiusBtnText,
+                  nearbySearchMode === "1km" && styles.radiusBtnTextActive,
+                ]}
+              >
+                Near me · 1 km
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.radiusBtn,
+                nearbySearchMode === "5km" && styles.radiusBtnActive,
+              ]}
+              onPress={searchNearMe5Km}
+            >
+              <Text
+                style={[
+                  styles.radiusBtnText,
+                  nearbySearchMode === "5km" && styles.radiusBtnTextActive,
+                ]}
+              >
+                Near me · 5 km
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.radiusBtn,
+                nearbySearchMode === "space" && styles.radiusBtnActive,
+              ]}
+              onPress={searchThisSpace}
+            >
+              <Text
+                style={[
+                  styles.radiusBtnText,
+                  nearbySearchMode === "space" && styles.radiusBtnTextActive,
+                ]}
+              >
+                This space
+              </Text>
+            </Pressable>
+          </View>
+
+          {nearbySearchMode !== "space" ? (
+            <Text style={styles.radiusHint}>
+              Showing temples within {formatDistanceMeters(activeRadiusMeters)} of
+              where you are now.
+            </Text>
+          ) : null}
 
           <View style={styles.searchRow}>
             <TextInput
@@ -676,6 +828,10 @@ export function NestDetailScreen({ route, accessToken, userEmail }: Props) {
                     </Text>
                   ) : null}
                   <Text style={styles.placeMeta}>
+                    {t.distanceMeters != null
+                      ? `${formatDistanceMeters(t.distanceMeters)} away`
+                      : null}
+                    {t.distanceMeters != null && t.rating != null ? " · " : ""}
                     {t.rating != null ? `★ ${t.rating}` : "No rating"}
                     {t.userRatingsTotal != null ? ` (${t.userRatingsTotal})` : ""}
                   </Text>
@@ -960,6 +1116,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   searchRow: { flexDirection: "row", gap: 8, marginBottom: 12, alignItems: "center" },
+  radiusRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 10,
+  },
+  radiusBtn: {
+    borderWidth: 1,
+    borderColor: "#0D9488",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+  },
+  radiusBtnActive: {
+    backgroundColor: "#0D9488",
+    borderColor: "#0D9488",
+  },
+  radiusBtnText: {
+    color: "#0D9488",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  radiusBtnTextActive: {
+    color: "#fff",
+  },
+  radiusHint: {
+    fontSize: 12,
+    color: "#666",
+    marginBottom: 10,
+  },
   searchInput: {
     flex: 1,
     borderWidth: 1,

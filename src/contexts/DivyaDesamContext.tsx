@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -9,9 +9,14 @@ import {
   deleteList,
 } from '../services/divyadesam';
 import type { DivyaDesamList } from '../services/divyadesam';
+import { normalizeDocumentId, normalizeEmail } from '../lib/geo';
 
 interface DivyaDesamContextType {
   lists: DivyaDesamList[];
+  /** User-owned tracked lists (adopted copies + custom lists; excludes global templates). */
+  myLists: DivyaDesamList[];
+  /** Parent template ids the user has adopted — for Explore "Adopted" badges. */
+  adoptedParentIds: Set<string>;
   loading: boolean;
   error: string | null;
   refreshLists: () => Promise<void>;
@@ -24,15 +29,17 @@ interface DivyaDesamContextType {
 const DivyaDesamContext = createContext<DivyaDesamContextType | undefined>(undefined);
 
 export const DivyaDesamProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { session } = useAuth();
-  const user = session?.user;
+  const { session, loading: authLoading } = useAuth();
+  const userEmail = normalizeEmail(session?.user?.email);
   const [lists, setLists] = useState<DivyaDesamList[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadLists = async () => {
-    if (!user) {
+  const refreshLists = useCallback(async () => {
+    if (authLoading) return;
+    if (!userEmail) {
       setLists([]);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -40,48 +47,78 @@ export const DivyaDesamProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       const data = await fetchLists();
       setLists(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to fetch Divya Desams lists');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch Divya Desams lists';
+      setError(message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [authLoading, userEmail]);
 
   useEffect(() => {
-    loadLists();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    void refreshLists();
+  }, [refreshLists]);
 
-  const handleCreateList = async (data: Partial<DivyaDesamList>) => {
-    const newList = await createList(data);
-    await loadLists();
-    return newList;
-  };
+  const myLists = useMemo(() => {
+    if (!userEmail) return [];
+    return lists.filter(
+      (list) =>
+        !list.isGlobalTemplate && normalizeEmail(list.creatorEmail) === userEmail
+    );
+  }, [lists, userEmail]);
 
-  const handleCloneList = async (id: string) => {
-    const clonedList = await cloneList(id);
-    await loadLists();
-    return clonedList;
-  };
+  const adoptedParentIds = useMemo(() => {
+    const ids = myLists
+      .filter((list) => list.parentListId)
+      .map((list) => normalizeDocumentId(list.parentListId))
+      .filter((id): id is string => id != null);
+    return new Set(ids);
+  }, [myLists]);
 
-  const handleUpdateList = async (id: string, data: Partial<DivyaDesamList>) => {
-    const updated = await updateList(id, data);
-    await loadLists();
-    return updated;
-  };
+  const handleCreateList = useCallback(
+    async (data: Partial<DivyaDesamList>) => {
+      const newList = await createList(data);
+      await refreshLists();
+      return newList;
+    },
+    [refreshLists]
+  );
 
-  const handleDeleteList = async (id: string) => {
-    await deleteList(id);
-    await loadLists();
-  };
+  const handleCloneList = useCallback(
+    async (id: string) => {
+      const clonedList = await cloneList(id);
+      await refreshLists();
+      return clonedList;
+    },
+    [refreshLists]
+  );
+
+  const handleUpdateList = useCallback(
+    async (id: string, data: Partial<DivyaDesamList>) => {
+      const updated = await updateList(id, data);
+      await refreshLists();
+      return updated;
+    },
+    [refreshLists]
+  );
+
+  const handleDeleteList = useCallback(
+    async (id: string) => {
+      await deleteList(id);
+      await refreshLists();
+    },
+    [refreshLists]
+  );
 
   return (
     <DivyaDesamContext.Provider
       value={{
         lists,
-        loading,
+        myLists,
+        adoptedParentIds,
+        loading: authLoading || loading,
         error,
-        refreshLists: loadLists,
+        refreshLists,
         createList: handleCreateList,
         cloneList: handleCloneList,
         updateList: handleUpdateList,
